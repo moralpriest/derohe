@@ -28,15 +28,11 @@ import (
 	"time"
 
 	"github.com/chzyer/readline"
-	"github.com/creachadair/jrpc2"
 	"github.com/deroproject/derohe/cryptography/crypto"
 	"github.com/deroproject/derohe/globals"
 	"github.com/deroproject/derohe/rpc"
 	"github.com/deroproject/derohe/transaction"
-	"github.com/deroproject/derohe/walletapi/xswd"
 )
-
-var xswd_server *xswd.XSWD
 
 //import "github.com/deroproject/derohe/address"
 
@@ -186,27 +182,34 @@ func handle_easymenu_post_open_command(l *readline.Instance, line string) (proce
 			break
 		}
 
-		scid, err := ReadSCID(l)
-		if err != nil {
-			logger.Error(err, "error reading SCID")
-			break
-		}
-
 		a, err := ReadAddress(l, wallet)
 		if err != nil {
 			logger.Error(err, "error reading address")
 			break
 		}
 
-		var amount_to_transfer uint64
-		max_balance, _, err := wallet.GetDecryptedBalanceAtTopoHeight(scid, -1, wallet.GetAddress().String())
-		if err != nil {
-			logger.Error(err, "error during SC balance", "scid", scid.String())
-			break
+		// Request SCID from integrated address or from input
+		var scid crypto.Hash
+		if a.Arguments != nil && a.Arguments.HasValue(rpc.RPC_ASSET, rpc.DataHash) {
+			scid = a.Arguments.Value(rpc.RPC_ASSET, rpc.DataHash).(crypto.Hash)
+			logger.Info("Address has a integrated SCID", "scid", scid)
+		} else {
+			scid, err = ReadSCID(l)
+			if err != nil {
+				logger.Error(err, "error reading SCID")
+				break
+			}
 		}
 
-		max_str := globals.FormatMoney(max_balance)
+		var amount_to_transfer uint64
+		max_balance, _ := wallet.Get_Balance_scid(scid)
+		max_str := fmt.Sprintf("%d", max_balance)
+		if scid.IsZero() {
+			max_str = globals.FormatMoney(max_balance)
+		} // TODO else digits based on token standard
+
 		amount_str := read_line_with_prompt(l, fmt.Sprintf("Enter token amount to transfer (max %s): ", max_str))
+		// TODO digits based on token standard
 		if amount_str == "" {
 			amount_str = ".00001"
 		}
