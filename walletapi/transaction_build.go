@@ -182,9 +182,9 @@ rebuild_tx:
 				ephemeral_scalar = ephemeral_scalar.Mod(ephemeral_scalar, bn256.Order)
 				ephemeral_pub := crypto.GPoint.ScalarMult(crypto.GetBNRed(ephemeral_scalar))
 
-				shared_key := crypto.GenerateSharedSecret(ephemeral_scalar, publickeylist[i])
+				// witness_index[0] is sender, witness_index[1] is receiver
+				asset.RPCPayload = append([]byte{byte(uint(witness_index[0]))}, data...)
 
-				payload := append([]byte{byte(uint(witness_index[1]))}, data...)
 				//fmt.Printf("buulding shared_key %x  index of receiver %d\n",shared_key,i)
 				//fmt.Printf("building plaintext payload %x\n",asset.RPCPayload)
 
