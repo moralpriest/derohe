@@ -603,7 +603,7 @@ func (x *XSWD) handleMessage(app *ApplicationData, request *jrpc2.Request) inter
 // Request the permission for a method and save its result if it must be persisted
 func (x *XSWD) requestPermission(app *ApplicationData, request *jrpc2.Request) Permission {
 	perm, found := app.Permissions[request.Method()]
-	if !found {
+	if !found || perm == Ask {
 		perm = x.requestHandler(app, request)
 
 		if perm == AlwaysDeny || perm == AlwaysAllow {
