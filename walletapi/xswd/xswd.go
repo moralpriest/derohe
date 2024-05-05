@@ -166,7 +166,8 @@ type XSWD struct {
 	wallet         *walletapi.Wallet_Disk
 	rpcHandler     handler.Map
 	running        bool
-	forceAsk       bool // forceAsk ensures no permissions can be accepted upon initial connection
+	forceAsk       bool     // forceAsk ensures no permissions can be accepted upon initial connection
+	noStore        []string // noStore methods won't store AlwaysAllow permission
 	requests       chan messageRequest
 	registers      chan messageRegistration
 	// context and cancel to cleanly exit handler_loop
@@ -183,12 +184,13 @@ const XSWD_PORT = 44326
 
 // Create a new XSWD server which allows to connect any dApp to the wallet safely through a websocket
 // Each request done by the session will wait on the appHandler and requestHandler to be accepted
-// NewXSWDServer will default to forceAsk (call requestHandler) for all wallet method requests
+// NewXSWDServer will default to forceAsk (call requestHandler) for all wallet method requests,
+// methods from xswd package are default noStore and won't store AlwaysAllow permission
 func NewXSWDServer(wallet *walletapi.Wallet_Disk, appHandler func(*ApplicationData) bool, requestHandler func(*ApplicationData, *jrpc2.Request) Permission) *XSWD {
-	return NewXSWDServerWithPort(XSWD_PORT, wallet, true, appHandler, requestHandler)
+	return NewXSWDServerWithPort(XSWD_PORT, wallet, true, []string{"SignData", "CheckSignature", "GetDaemon"}, appHandler, requestHandler)
 }
 
-func NewXSWDServerWithPort(port int, wallet *walletapi.Wallet_Disk, forceAsk bool, appHandler func(*ApplicationData) bool, requestHandler func(*ApplicationData, *jrpc2.Request) Permission) *XSWD {
+func NewXSWDServerWithPort(port int, wallet *walletapi.Wallet_Disk, forceAsk bool, noStore []string, appHandler func(*ApplicationData) bool, requestHandler func(*ApplicationData, *jrpc2.Request) Permission) *XSWD {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("XSWD server"))
@@ -218,6 +220,7 @@ func NewXSWDServerWithPort(port int, wallet *walletapi.Wallet_Disk, forceAsk boo
 		registers:  make(chan messageRegistration),
 		running:    true,
 		forceAsk:   forceAsk,
+		noStore:    noStore,
 		ctx:        ctx,
 		cancel:     cancel,
 	}
@@ -539,6 +542,12 @@ func (x *XSWD) addApplication(r *http.Request, conn *Connection, app *Applicatio
 					continue
 				}
 
+				// Check if wallet defined method as noStore
+				if p == AlwaysAllow && !x.CanStorePermission(n) {
+					x.logger.V(1).Info("Method not allowed AlwaysAllow permission", n, p)
+					continue
+				}
+
 				// Normalize all method names
 				normalized := strings.ToLower(strings.ReplaceAll(n, "_", ""))
 
@@ -708,28 +717,40 @@ func (x *XSWD) handleMessage(app *ApplicationData, request *jrpc2.Request) inter
 			code = PermissionAlwaysDenied
 		}
 
-		x.logger.Info("Permission not granted for method", "method", methodName)
+		x.logger.Info(fmt.Sprintf("%s permission not granted for method", app.Name), "method", methodName)
 		return ResponseWithError(request, jrpc2.Errorf(code, "Permission not granted for method %q", methodName))
 	}
 }
 
+// Check if method is allowed to store AlwaysAllow permission when adding application or user selection is made
+func (x *XSWD) CanStorePermission(method string) bool {
+	for _, m := range x.noStore {
+		if m == method {
+			return false
+		}
+	}
+
+	return true
+}
+
 // Request the permission for a method and save its result if it must be persisted
 func (x *XSWD) requestPermission(app *ApplicationData, request *jrpc2.Request) Permission {
-	perm, found := app.Permissions[request.Method()]
+	method := request.Method()
+	perm, found := app.Permissions[method]
 	if !found || perm == Ask {
 		perm = x.requestHandler(app, request)
 
-		if perm == AlwaysDeny || perm == AlwaysAllow {
-			app.Permissions[request.Method()] = perm
+		if perm == AlwaysDeny || (perm == AlwaysAllow && x.CanStorePermission(method)) {
+			app.Permissions[method] = perm
 		}
 
 		if perm.IsPositive() {
-			x.logger.Info("Permission granted", "method", request.Method(), "permission", perm)
+			x.logger.Info("Permission granted", "method", method, "permission", perm)
 		} else {
-			x.logger.Info("Permission rejected", "method", request.Method(), "permission", perm)
+			x.logger.Info("Permission rejected", "method", method, "permission", perm)
 		}
 	} else {
-		x.logger.V(1).Info("Permission already granted for method", "method", request.Method(), "permission", perm)
+		x.logger.V(1).Info("Permission already granted for method", "method", method, "permission", perm)
 	}
 
 	return perm

@@ -894,9 +894,17 @@ func ReadStringXSWDPrompt(l *readline.Instance, onClose chan bool, prompt string
 
 // Ask permission for request
 func AskPermissionForRequest(l *readline.Instance, app *xswd.ApplicationData, request *jrpc2.Request) xswd.Permission {
-	values := []string{"A", "D", "AA", "AD"}
+	method := request.Method()
 	param := strings.ReplaceAll(strings.Join(strings.Fields(request.ParamString()), " "), "\n", " ")
-	line := ReadStringXSWDPrompt(l, app.OnClose, fmt.Sprintf("Request from %s: %s | Params: %s | Do you want to allow this request ? ([A]llow / [D]eny / [AA] Always Allow / [AD] Always Deny): ", app.Name, request.Method(), param), values)
+
+	values := []string{"A", "D", "AA", "AD"}
+	prompt := fmt.Sprintf("Request from %s: %s | Params: %s | Do you want to allow this request ? ([A]llow / [D]eny / [AA] Always Allow / [AD] Always Deny): ", app.Name, method, param)
+	if !xswd_server.CanStorePermission(method) {
+		values = []string{"A", "D", "AD"}
+		prompt = fmt.Sprintf("Request from %s: %s | Params: %s | Do you want to allow this request ? ([A]llow / [D]eny / [AD] Always Deny): ", app.Name, method, param)
+	}
+
+	line := ReadStringXSWDPrompt(l, app.OnClose, prompt, values)
 
 	if strings.ToUpper(strings.TrimSpace(line)) == "A" {
 		return xswd.Allow

@@ -122,8 +122,8 @@ func register_wallets(chain *blockchain.Blockchain) {
 		wallets[i].SetOnlineMode() // make wallet connect to daemon
 
 		if v, ok := globals.Arguments["--use-xswd"]; ok && v.(bool) {
-			// XSWD server accept everything by default
-			xswd.NewXSWDServerWithPort(wallet_ports_xswd_start+i, wallets[i], false, func(app *xswd.ApplicationData) bool {
+			// XSWD simulator server accepts everything by default
+			xswd.NewXSWDServerWithPort(wallet_ports_xswd_start+i, wallets[i], false, []string{}, func(app *xswd.ApplicationData) bool {
 				return true
 			}, func(app *xswd.ApplicationData, request *jrpc2.Request) xswd.Permission {
 				return xswd.Allow

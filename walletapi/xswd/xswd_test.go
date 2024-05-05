@@ -50,6 +50,8 @@ var testAppData = []ApplicationData{
 			"GetTransfers": Allow,
 			"transfer":     Deny,
 			"GetBalance":   Ask,
+			// These are noStore permissions in Stored test
+			"MakeIntegratedAddress": AlwaysAllow,
 		},
 		Signature: []byte(`-----BEGIN DERO SIGNED MESSAGE-----
 Address: deto1qyvyeyzrcm2fzf6kyq7egkes2ufgny5xn77y6typhfx9s7w3mvyd5qqynr5hx
@@ -97,7 +99,7 @@ OTllNGE1ZTA4N2UzNjBkNw==
 			"Netrunner":      Deny,
 			"Artificer":      Ask,
 			"GetDaemon":      AlwaysAllow, // Only store methods from rpcserver/xswd
-			"SignData":       AlwaysAllow,
+			"SignData":       AlwaysAllow, // all three should be stored in Stored test
 			"CheckSignature": AlwaysAllow,
 		},
 		Signature: []byte(`-----BEGIN DERO SIGNED MESSAGE-----
@@ -405,9 +407,10 @@ func TestXSWDServer(t *testing.T) {
 	// Create XSWD server
 	var err error
 	var server = &XSWD{}
+	var xswdWallet *walletapi.Wallet_Disk
 	assert.False(t, server.IsRunning(), "XSWD server should not be running and is")
 	// Using NewXSWDServer, which defaults all permissions to Ask
-	_, server, err = testNewXSWDServer(t, false, appHandler, requestHandler)
+	xswdWallet, server, err = testNewXSWDServer(t, false, appHandler, requestHandler)
 	assert.NoErrorf(t, err, "testNewXSWDServer should not error: %s", err)
 	// Stop server and ensure it is not running
 	defer func() {
@@ -881,6 +884,9 @@ func TestXSWDServer(t *testing.T) {
 				assert.Equal(t, testWalletData[0].Address, signer.String(), "Signers walletapi %d does not match %s: %s", i, testWalletData[0].Address, signer.String())
 				assert.Equal(t, somedata, message, "Signed walletapi messages %d do not match %s: %s", i, somedata, message)
 
+				// AlwaysAllow CheckSignature request to test CanStorePermission as it is a noStore method here
+				server.requestHandler = func(ad *ApplicationData, r *jrpc2.Request) Permission { return AlwaysAllow }
+
 				// Test XSWD CheckSignature result matches walletapi results
 				var result13b Signature_Result
 				request13b := jsonrpc.RPCRequest{
@@ -894,6 +900,10 @@ func TestXSWDServer(t *testing.T) {
 				assert.NotNil(t, response13b, "Response 13b on application %d should not be nil", i)
 				assert.Nil(t, serverErr, "Response 13b on application %d should not have error: %v", i, serverErr)
 				assert.NotNil(t, response13b.Result, "Response 13b on application %d should not be nil", i)
+				// Nothing should be stored
+				for ii, appp := range server.applications {
+					assert.Empty(t, appp.Permissions[request13b.Method], "Application %d should not have permissions for this method: %v", ii, request13b.Method)
+				}
 
 				js, err := json.Marshal(response13b.Result)
 				assert.NoErrorf(t, err, "Request 13b marshal on application %d should not error: %s", i, err)
@@ -918,6 +928,13 @@ func TestXSWDServer(t *testing.T) {
 				assert.NotNil(t, response13d, "Response 13d on application %d should not be nil", i)
 				assert.Error(t, serverErr, "Response 13d on application %d should have error as permission was Deny: %v", i, serverErr)
 				assert.Equal(t, PermissionDenied, serverErr.Code, "Response 13d on application %d should be %v: %v", i, PermissionDenied, serverErr.Code)
+
+				// Test again if CheckSignature stored AlwaysAllow from request request13b
+				response13e, serverErr, err := testXSWDCall(t, conn, request13b)
+				assert.NoErrorf(t, err, "Request 13e %q on application %d should not error: %s", request13b.Method, i, err)
+				assert.NotNil(t, response13e, "Response 13e on application %d should not be nil", i)
+				assert.Error(t, serverErr, "Response 13e on application %d should have error as permission was not stored and denied: %v", i, serverErr)
+				assert.Equal(t, PermissionDenied, serverErr.Code, "Response 13e on application %d should be %v: %v", i, PermissionDenied, serverErr.Code)
 			})
 
 			// // Request 14
@@ -1207,7 +1224,7 @@ func TestXSWDServer(t *testing.T) {
 					// Test broadcasting event
 					broadcast := float64(600 + i)
 					assert.True(t, server.IsEventTracked(rpc.NewTopoheight), "Event should be tracked")
-					server.BroadcastEvent(rpc.NewTopoheight, broadcast)
+					testListener(xswdWallet, rpc.NewTopoheight, broadcast)
 					time.Sleep(15 * time.Millisecond)
 
 					// Test reading the event
@@ -1280,8 +1297,11 @@ func TestXSWDServer(t *testing.T) {
 						Sender:   tx,
 					}
 					assert.True(t, server.IsEventTracked(rpc.NewEntry), "Event should be tracked")
-					server.BroadcastEvent(rpc.NewEntry, broadcast)
+					testListener(xswdWallet, rpc.NewEntry, broadcast)
 					time.Sleep(10 * time.Millisecond)
+
+					// Broadcasting untracked event
+					testListener(xswdWallet, rpc.NewBalance, rpc.BalanceChange{})
 
 					// Test reading the event
 					_, message, err := conn5.ReadMessage()
@@ -1393,6 +1413,7 @@ func TestXSWDServerWithPort(t *testing.T) {
 	// "GetTransfers": Allow,
 	// "transfer":     Deny,
 	// "GetBalance":   Ask,
+	// and noStore permissions
 	app := testAppData[1]
 
 	// Test requests on stored permissions
@@ -1691,6 +1712,22 @@ func TestXSWDServerWithPort(t *testing.T) {
 			assert.IsType(t, "string", response6.Result, "Response 6 should be string: %T", response6.Result)
 			assert.Equal(t, endpoint, response6.Result.(string))
 		})
+
+		// // Request 7
+		t.Run("Request7", func(t *testing.T) {
+			// Call a daemon method with invalid params
+			invalidJSON := []byte(`{"Name":"DERO","Age":7{`)
+			request7 := jsonrpc.RPCRequest{
+				JSONRPC: "2.0",
+				ID:      1,
+				Method:  "DERO.GetBlock",
+				Params:  invalidJSON,
+			}
+			_, serverErr, err := testXSWDCall(t, conn, request7)
+			assert.NoErrorf(t, err, "Request 7 %s should not error: %s", request7.Method, err)
+			// This errors on RPC.Call(), not request.UnmarshalParams()
+			assert.Equal(t, code.InvalidRequest, serverErr.Code, "Response 7 should be %v: %v", code.InvalidRequest, serverErr.Code)
+		})
 	})
 }
 
@@ -1859,6 +1896,19 @@ func TestXSWDStop(t *testing.T) {
 		assert.Len(t, server.applications, 0, "There should be no applications")
 	})
 
+	// This will test server stop on initializing error
+	t.Run("Stop3", func(t *testing.T) {
+		if !server.IsRunning() {
+			_, server, err = testNewXSWDServer(t, false, true, Allow)
+			assert.NoErrorf(t, err, "testNewXSWDServer should not error: %s", err)
+		}
+
+		_, server2, err := testNewXSWDServer(t, false, true, Allow)
+		assert.Error(t, err, "testNewXSWDServer should error")
+		// This nil is applied from wallet side
+		assert.Nil(t, server2, "server2 should be nil")
+	})
+
 	assert.Len(t, server.applications, 0, "There should be no applications")
 }
 
@@ -1878,12 +1928,14 @@ func testNewXSWDServer(t *testing.T, port, aHandler bool, rHandler Permission) (
 	requestHandler := func(app *ApplicationData, request *jrpc2.Request) Permission { return rHandler }
 
 	if port {
+		// Test noStore methods outside NewXSWDServer() defaults
+		testNoStores := []string{"MakeIntegratedAddress"}
 		// NewXSWDServerWithPort will use !forceAsk to allow permission requests
-		server = NewXSWDServerWithPort(XSWD_PORT, xswdWallet, false, appHandler, requestHandler)
+		server = NewXSWDServerWithPort(XSWD_PORT, xswdWallet, false, testNoStores, appHandler, requestHandler)
 		t.Logf("Starting NewXSWDServerWithPort: [port: %d, appHandler: %t, requestHandler: %s]", XSWD_PORT, aHandler, rHandler.String())
 
 	} else {
-		// NewXSWDServer defaults all permissions to Ask
+		// NewXSWDServer defaults all permissions to Ask, noStore methods are all xswd methods
 		server = NewXSWDServer(xswdWallet, appHandler, requestHandler)
 		t.Logf("Starting NewXSWDServer: [appHandler: %t, requestHandler: %s]", aHandler, rHandler.String())
 	}
@@ -1962,4 +2014,13 @@ func testXSWDCall(t *testing.T, conn *websocket.Conn, request interface{}) (resp
 	}
 
 	return
+}
+
+// Test calling added listeners from account
+func testListener(xswdWallet *walletapi.Wallet_Disk, event rpc.EventType, value interface{}) {
+	if listeners, ok := xswdWallet.GetAccount().EventListeners[event]; ok {
+		for _, listener := range listeners {
+			listener(value)
+		}
+	}
 }
