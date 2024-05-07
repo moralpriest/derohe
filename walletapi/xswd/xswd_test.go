@@ -388,6 +388,11 @@ var testWalletData = []struct {
 	},
 }
 
+var sleep10 = time.Millisecond * 10
+var sleep25 = time.Millisecond * 25
+var sleep50 = time.Millisecond * 50
+var sleep500 = time.Millisecond * 500
+
 func TestMain(m *testing.M) {
 	// Add excess permissions to app 17
 	for i := 0; i < 256; i++ {
@@ -504,7 +509,7 @@ func TestXSWDServer(t *testing.T) {
 
 			// Close the app connection
 			conn.Close()
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(sleep10)
 
 			// Ensure there is no apps as connection was closed
 			assert.Len(t, server.GetApplications(), 0, "There should be no applications")
@@ -760,6 +765,8 @@ func TestXSWDServer(t *testing.T) {
 				assert.False(t, response8b.Result.(bool), "Response 8b on application %d should not have method: %s", i, methodName.Name)
 			})
 
+			// Break the requests up to stay within rate limit
+			time.Sleep(sleep500)
 			// Invalid data attempts expected to fail
 			expectedErr := code.ParseError
 
@@ -828,8 +835,7 @@ func TestXSWDServer(t *testing.T) {
 				// Test broadcasting event
 				broadcast := float64(600)
 				assert.True(t, server.IsEventTracked(rpc.NewTopoheight), "Event should be tracked")
-				server.BroadcastEvent(rpc.NewTopoheight, broadcast)
-				time.Sleep(10 * time.Millisecond)
+				testListener(xswdWallet, rpc.NewTopoheight, broadcast)
 
 				// Test reading the event
 				_, message, err := conn.ReadMessage()
@@ -964,7 +970,7 @@ func TestXSWDServer(t *testing.T) {
 
 			// Close the app connection
 			conn.Close()
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(sleep10)
 
 			// Reset requestHandler to Allow before beginning next connection
 			server.requestHandler = func(app *ApplicationData, request *jrpc2.Request) Permission { return Allow }
@@ -1034,7 +1040,7 @@ func TestXSWDServer(t *testing.T) {
 		assert.NoErrorf(t, err, "Application failed to write data to server: %s", err)
 		authResponse = testHandleAuthResponse(t, double)
 		assert.False(t, authResponse.Accepted, "Application should not be accepted and is")
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(sleep10)
 	})
 
 	// Test adding multiple applications
@@ -1080,14 +1086,15 @@ func TestXSWDServer(t *testing.T) {
 		server.appHandler = func(ad *ApplicationData) bool { return true }
 		// Give some time between allowing requests
 		server.requestHandler = func(ad *ApplicationData, r *jrpc2.Request) Permission {
-			time.Sleep(time.Millisecond * 5)
+			// This sleep should be within rate limit if response processing is added
+			time.Sleep(sleep50)
 			return Allow
 		}
 
 		// Wait for routines to complete all requests
 		var wg sync.WaitGroup
 		wg.Add(5)
-		requests := 300
+		requests := 200
 
 		// // Request 1
 		go func() {
@@ -1225,7 +1232,6 @@ func TestXSWDServer(t *testing.T) {
 					broadcast := float64(600 + i)
 					assert.True(t, server.IsEventTracked(rpc.NewTopoheight), "Event should be tracked")
 					testListener(xswdWallet, rpc.NewTopoheight, broadcast)
-					time.Sleep(15 * time.Millisecond)
 
 					// Test reading the event
 					_, message, err := conn4.ReadMessage()
@@ -1298,7 +1304,6 @@ func TestXSWDServer(t *testing.T) {
 					}
 					assert.True(t, server.IsEventTracked(rpc.NewEntry), "Event should be tracked")
 					testListener(xswdWallet, rpc.NewEntry, broadcast)
-					time.Sleep(10 * time.Millisecond)
 
 					// Broadcasting untracked event
 					testListener(xswdWallet, rpc.NewBalance, rpc.BalanceChange{})
@@ -1574,7 +1579,7 @@ func TestXSWDServerWithPort(t *testing.T) {
 			assert.Error(t, err, "Request 8 %q should error when disconnected", request8.Method)
 		})
 
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(sleep10)
 
 		// Ensure there is no apps as connection was closed
 		assert.Len(t, server.GetApplications(), 0, "There should be no applications")
@@ -1749,7 +1754,7 @@ func TestXSWDClosures(t *testing.T) {
 			// Close the client while awaiting permission
 			conn.Close()
 			<-ad.OnClose
-			time.Sleep(time.Millisecond * 10)
+			time.Sleep(sleep10)
 			return Allow
 		}
 
@@ -1767,7 +1772,7 @@ func TestXSWDClosures(t *testing.T) {
 		}
 		_, _, err = testXSWDCall(t, conn, request1)
 		assert.Errorf(t, err, "Request 1a %s should error: %s", request1.Method, err)
-		time.Sleep(time.Millisecond * 10)
+		time.Sleep(sleep10)
 		assert.Len(t, server.applications, 0, "There should be no applications")
 
 		// Simulate a Allow permission and call again, but client should be already closed
@@ -1787,20 +1792,20 @@ func TestXSWDClosures(t *testing.T) {
 
 		// Simulate a connection request awaiting user input
 		server.appHandler = func(ad *ApplicationData) bool {
-			time.Sleep(time.Second * 3)
+			time.Sleep(time.Second * 2)
 			return true
 		}
 
 		// Close the client
 		go func() {
-			time.Sleep(time.Millisecond * 25)
+			time.Sleep(sleep25)
 			conn.Close()
 		}()
 
 		// Send ApplicationData to server
 		err = conn.WriteJSON(testAppData[1])
 		assert.NoErrorf(t, err, "Application failed to write data to server: %s", err)
-		time.Sleep(time.Millisecond * 10)
+		time.Sleep(sleep10)
 		assert.Len(t, server.applications, 0, "There should be no applications")
 		// Try to call but client should be closed
 		request1 := jsonrpc.RPCRequest{
@@ -1850,7 +1855,7 @@ func TestXSWDStop(t *testing.T) {
 
 		// Close the server
 		go func() {
-			time.Sleep(time.Millisecond * 25)
+			time.Sleep(sleep25)
 			server.Stop()
 		}()
 
@@ -1882,7 +1887,7 @@ func TestXSWDStop(t *testing.T) {
 
 		// Close the server
 		go func() {
-			time.Sleep(time.Millisecond * 25)
+			time.Sleep(sleep25)
 			server.Stop()
 		}()
 
@@ -1890,7 +1895,7 @@ func TestXSWDStop(t *testing.T) {
 		err = conn.WriteJSON(testAppData[3])
 		assert.NoErrorf(t, err, "Application failed to write data to server: %s", err)
 		// Ensure app has been removed after appHandler returns
-		time.Sleep(time.Second * 3)
+		time.Sleep(time.Second * 2)
 		_, _, err = conn.ReadMessage()
 		assert.Error(t, err, "Application should not be connected")
 		assert.Len(t, server.applications, 0, "There should be no applications")
@@ -1901,6 +1906,7 @@ func TestXSWDStop(t *testing.T) {
 		if !server.IsRunning() {
 			_, server, err = testNewXSWDServer(t, false, true, Allow)
 			assert.NoErrorf(t, err, "testNewXSWDServer should not error: %s", err)
+			t.Cleanup(server.Stop)
 		}
 
 		_, server2, err := testNewXSWDServer(t, false, true, Allow)
@@ -1910,6 +1916,198 @@ func TestXSWDStop(t *testing.T) {
 	})
 
 	assert.Len(t, server.applications, 0, "There should be no applications")
+}
+
+// Test application request rate limit
+func TestXSWDRateLimit(t *testing.T) {
+	_, server, err := testNewXSWDServer(t, false, true, Allow)
+	assert.NoErrorf(t, err, "testNewXSWDServer should not error: %s", err)
+	t.Cleanup(server.Stop)
+
+	var wg sync.WaitGroup
+	wg.Add(5)
+
+	// Enough requests to hit limiter
+	requests := 400
+
+	exceeded := false
+	notExceeded := true
+
+	go func() {
+		defer wg.Done()
+		conn, err := testCreateClient(nil)
+		assert.NoErrorf(t, err, "Application failed to dial server: %s", err)
+		defer conn.Close()
+
+		// Send ApplicationData to server
+		err = conn.WriteJSON(testAppData[0])
+		assert.NoErrorf(t, err, "Application failed to write data to server: %s", err)
+		authResponse := testHandleAuthResponse(t, conn)
+		assert.True(t, authResponse.Accepted, "Application should be accepted and is not")
+		assert.Greater(t, len(server.applications), 0, "There should be one applications")
+
+		request := jsonrpc.RPCRequest{
+			JSONRPC: "2.0",
+			ID:      1,
+			Method:  "GetAddress",
+		}
+
+		start := time.Now()
+		for i := 0; i < requests; i++ {
+			_, serverErr, err := testXSWDCall(t, conn, request)
+			if exceeded {
+				assert.Error(t, err, "Error should not be nil")
+				break
+			}
+
+			if serverErr == nil {
+				// t.Logf("request: %s", time.Since(start))
+			} else {
+				exceeded = true
+				assert.Equal(t, RateLimitExceeded, serverErr.Code, "Expected error to be %v: %v", RateLimitExceeded, serverErr.Code)
+				t.Logf("App 1 exceeded rate limit at %d requests %v elapsed: %v", i, time.Since(start), serverErr.Code)
+			}
+			// This sleep should be above rate limit
+			time.Sleep(time.Millisecond * 50)
+		}
+	}()
+
+	// This sleep should be within rate limit
+	sleepFor := time.Millisecond * 90
+
+	// This request is going to be looped for rate tests
+	call := func(t *testing.T, num, requests int, sleepFor time.Duration) bool {
+		conn, err := testCreateClient(nil)
+		assert.NoErrorf(t, err, "Application failed to dial server: %s", err)
+		defer conn.Close()
+
+		err = conn.WriteJSON(testAppData[num])
+		assert.NoErrorf(t, err, "Application failed to write data to server: %s", err)
+		authResponse := testHandleAuthResponse(t, conn)
+		assert.True(t, authResponse.Accepted, "Application should be accepted and is not")
+
+		request := jsonrpc.RPCRequest{
+			JSONRPC: "2.0",
+			ID:      1,
+			Method:  "GetAddress",
+		}
+
+		start := time.Now()
+		for i := 0; i < requests; i++ {
+			_, serverErr, err := testXSWDCall(t, conn, request)
+			assert.NoErrorf(t, err, "Request %d should not error: %s", num, err)
+			if serverErr != nil {
+				t.Logf("App %d exceeded rate limit at %d requests %v elapsed: %v", num, i, time.Since(start), serverErr.Code)
+				return false
+			}
+
+			time.Sleep(sleepFor)
+		}
+
+		return true
+	}
+
+	go func() {
+		defer wg.Done()
+		notExceeded = call(t, 1, requests/4, sleepFor)
+	}()
+
+	go func() {
+		defer wg.Done()
+		notExceeded = call(t, 2, requests/4, sleepFor)
+	}()
+
+	go func() {
+		defer wg.Done()
+		notExceeded = call(t, 3, requests/4, sleepFor)
+	}()
+
+	go func() {
+		defer wg.Done()
+		notExceeded = call(t, 4, requests/4, sleepFor)
+	}()
+
+	wg.Wait()
+
+	assert.True(t, exceeded, "Expecting this test to have exceeded rate limit and did not")
+	assert.True(t, notExceeded, "Expecting this test to have been within rate limit and was not")
+	time.Sleep(sleep10)
+	assert.Len(t, server.applications, 0, "There should be no applications left")
+
+	// Let requests back up while awaiting user to select permission
+	server.requestHandler = func(ad *ApplicationData, r *jrpc2.Request) Permission {
+		time.Sleep(time.Second * 30)
+		return Allow
+	}
+
+	disconnected := false
+
+	conn, err := testCreateClient(nil)
+	assert.NoErrorf(t, err, "Application failed to dial server: %s", err)
+	defer conn.Close()
+
+	err = conn.WriteJSON(testAppData[0])
+	assert.NoErrorf(t, err, "Application failed to write data to server: %s", err)
+	authResponse := testHandleAuthResponse(t, conn)
+	assert.True(t, authResponse.Accepted, "Application should be accepted and is not")
+	assert.Greater(t, len(server.applications), 0, "There should be one applications")
+
+	request1 := jsonrpc.RPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "GetBalance",
+	}
+
+	start := time.Now()
+	for i := 0; i < requests; i++ {
+		err = conn.WriteJSON(request1)
+		if err != nil {
+			// t.Logf("write: %s", err)
+			break
+		}
+
+		if disconnected {
+			return
+		}
+
+		// Keep sending requests without waiting for response
+		go func() {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				// t.Logf("read: %s", err)
+				return
+			}
+
+			var response RPCResponse
+			err = json.Unmarshal(message, &response)
+			if err != nil {
+				return
+			}
+
+			var result []byte
+			result, err = json.Marshal(response.Error)
+			if err != nil {
+				return
+			}
+
+			var serverErr *jrpc2.Error
+			err = json.Unmarshal(result, &serverErr)
+			if err != nil {
+				return
+			}
+
+			if serverErr != nil && assert.Equal(t, RateLimitExceeded, serverErr.Code, "Expected error to be %v: %v", RateLimitExceeded, serverErr.Code) {
+				disconnected = true
+				t.Logf("App 6 exceeded rate limit at %d requests %v elapsed: %v", i, time.Since(start), serverErr.Code)
+			}
+		}()
+		// This sleep keeps requests close to burst, it could be lowered to see faster rate behavior
+		time.Sleep(time.Millisecond * 5)
+	}
+
+	assert.True(t, disconnected, "Expecting this test to have been disconnected for exceeding rate limit and was not")
+	time.Sleep(sleep10)
+	assert.Len(t, server.applications, 0, "There should be no applications left")
 }
 
 // Create a testnet wallet and start XSWD server for tests

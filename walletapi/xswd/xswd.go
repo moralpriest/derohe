@@ -19,6 +19,7 @@ import (
 	"github.com/deroproject/derohe/walletapi/rpcserver"
 	"github.com/go-logr/logr"
 	"github.com/gorilla/websocket"
+	"golang.org/x/time/rate"
 )
 
 type ApplicationData struct {
@@ -30,8 +31,9 @@ type ApplicationData struct {
 	Signature        []byte                `json:"signature"`
 	RegisteredEvents map[rpc.EventType]bool
 	// RegisteredEvents only init when accepted by user
-	OnClose      chan bool `json:"-"` // used to inform when the Session disconnect
-	isRequesting bool      `json:"-"`
+	OnClose      chan bool     `json:"-"` // used to inform when the Session disconnect
+	isRequesting bool          `json:"-"`
+	limiter      *rate.Limiter `json:"-"` // rate limit requests from the application
 }
 
 func (app *ApplicationData) SetIsRequesting(value bool) {
@@ -115,6 +117,7 @@ func (perm Permission) String() string {
 
 const PermissionDenied code.Code = -32043
 const PermissionAlwaysDenied code.Code = -32044
+const RateLimitExceeded code.Code = -32070
 
 type messageRequest struct {
 	app     *ApplicationData
@@ -578,8 +581,9 @@ func (x *XSWD) addApplication(r *http.Request, conn *Connection, app *Applicatio
 	x.handlerMutex.Lock()
 	defer x.handlerMutex.Unlock()
 
-	// check the permission from user
 	app.OnClose = make(chan bool)
+	app.limiter = rate.NewLimiter(10.0, 20)
+	// check the permission from user
 	app.SetIsRequesting(true)
 	if x.appHandler(app) {
 		app.SetIsRequesting(false)
@@ -615,7 +619,7 @@ func (x *XSWD) addApplication(r *http.Request, conn *Connection, app *Applicatio
 // only used in internal
 func (x *XSWD) removeApplicationOfSession(conn *Connection, app *ApplicationData) {
 	if app != nil && app.IsRequesting() {
-		x.logger.Info("App is requesting prompt, closing")
+		x.logger.Info(fmt.Sprintf("Closing %s request prompt", app.Name))
 		app.OnClose <- true
 	}
 	conn.Close()
@@ -761,6 +765,16 @@ func (x *XSWD) readMessageFromSession(conn *Connection, app *ApplicationData) {
 	defer x.removeApplicationOfSession(conn, app)
 
 	for {
+		// Remove application if it exceeds request rate limit
+		if app.limiter != nil && !app.limiter.Allow() {
+			x.logger.Error(fmt.Errorf("requests have exceeded rate limit"), "Rate limit exceeded", app.Name, "closing connection")
+			if err := conn.Send(ResponseWithError(nil, jrpc2.Errorf(RateLimitExceeded, "Requests have exceeded rate limit, closing connection"))); err != nil {
+				return
+			}
+
+			return
+		}
+
 		// block and read the message bytes from session
 		_, buff, err := conn.Read()
 		if err != nil {
@@ -770,7 +784,7 @@ func (x *XSWD) readMessageFromSession(conn *Connection, app *ApplicationData) {
 
 		// app tried to send us a request while he was not authorized yet
 		if !x.HasApplicationId(app.Id) {
-			x.logger.Info("App is not authorized and requests us, closing")
+			x.logger.Info("App is not authorized and requests us, closing connection")
 			return
 		}
 
