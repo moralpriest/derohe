@@ -190,7 +190,7 @@ const XSWD_PORT = 44326
 // NewXSWDServer will default to forceAsk (call requestHandler) for all wallet method requests,
 // methods from xswd package are default noStore and won't store AlwaysAllow permission
 func NewXSWDServer(wallet *walletapi.Wallet_Disk, appHandler func(*ApplicationData) bool, requestHandler func(*ApplicationData, *jrpc2.Request) Permission) *XSWD {
-	return NewXSWDServerWithPort(XSWD_PORT, wallet, true, []string{"SignData", "CheckSignature", "GetDaemon"}, appHandler, requestHandler)
+	return NewXSWDServerWithPort(XSWD_PORT, wallet, true, []string{"Subscribe", "SignData", "CheckSignature", "GetDaemon"}, appHandler, requestHandler)
 }
 
 func NewXSWDServerWithPort(port int, wallet *walletapi.Wallet_Disk, forceAsk bool, noStore []string, appHandler func(*ApplicationData) bool, requestHandler func(*ApplicationData, *jrpc2.Request) Permission) *XSWD {

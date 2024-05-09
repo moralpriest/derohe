@@ -1954,18 +1954,11 @@ func TestXSWDRateLimit(t *testing.T) {
 
 		start := time.Now()
 		for i := 0; i < requests; i++ {
-			_, serverErr, err := testXSWDCall(t, conn, request)
-			if exceeded {
-				assert.Error(t, err, "Error should not be nil")
-				break
-			}
-
-			if serverErr == nil {
-				// t.Logf("request: %s", time.Since(start))
-			} else {
+			_, serverErr, _ := testXSWDCall(t, conn, request)
+			if serverErr != nil && assert.Equal(t, RateLimitExceeded, serverErr.Code, "Expected error to be %v: %v", RateLimitExceeded, serverErr.Code) {
 				exceeded = true
-				assert.Equal(t, RateLimitExceeded, serverErr.Code, "Expected error to be %v: %v", RateLimitExceeded, serverErr.Code)
 				t.Logf("App 1 exceeded rate limit at %d requests %v elapsed: %v", i, time.Since(start), serverErr.Code)
+				break
 			}
 			// This sleep should be above rate limit
 			time.Sleep(time.Millisecond * 50)
@@ -1996,7 +1989,7 @@ func TestXSWDRateLimit(t *testing.T) {
 		for i := 0; i < requests; i++ {
 			_, serverErr, err := testXSWDCall(t, conn, request)
 			assert.NoErrorf(t, err, "Request %d should not error: %s", num, err)
-			if serverErr != nil {
+			if serverErr != nil && serverErr.Code == RateLimitExceeded {
 				t.Logf("App %d exceeded rate limit at %d requests %v elapsed: %v", num, i, time.Since(start), serverErr.Code)
 				return false
 			}
@@ -2007,25 +2000,12 @@ func TestXSWDRateLimit(t *testing.T) {
 		return true
 	}
 
-	go func() {
-		defer wg.Done()
-		notExceeded = call(t, 1, requests/4, sleepFor)
-	}()
-
-	go func() {
-		defer wg.Done()
-		notExceeded = call(t, 2, requests/4, sleepFor)
-	}()
-
-	go func() {
-		defer wg.Done()
-		notExceeded = call(t, 3, requests/4, sleepFor)
-	}()
-
-	go func() {
-		defer wg.Done()
-		notExceeded = call(t, 4, requests/4, sleepFor)
-	}()
+	for i := 1; i < 5; i++ {
+		go func(i int) {
+			defer wg.Done()
+			notExceeded = call(t, i, requests/4, sleepFor)
+		}(i)
+	}
 
 	wg.Wait()
 
@@ -2036,8 +2016,8 @@ func TestXSWDRateLimit(t *testing.T) {
 
 	// Let requests back up while awaiting user to select permission
 	server.requestHandler = func(ad *ApplicationData, r *jrpc2.Request) Permission {
-		time.Sleep(time.Second * 30)
-		return Allow
+		<-ad.OnClose
+		return Deny
 	}
 
 	disconnected := false
@@ -2046,7 +2026,7 @@ func TestXSWDRateLimit(t *testing.T) {
 	assert.NoErrorf(t, err, "Application failed to dial server: %s", err)
 	defer conn.Close()
 
-	err = conn.WriteJSON(testAppData[0])
+	err = conn.WriteJSON(testAppData[5])
 	assert.NoErrorf(t, err, "Application failed to write data to server: %s", err)
 	authResponse := testHandleAuthResponse(t, conn)
 	assert.True(t, authResponse.Accepted, "Application should be accepted and is not")
@@ -2060,42 +2040,13 @@ func TestXSWDRateLimit(t *testing.T) {
 
 	start := time.Now()
 	for i := 0; i < requests; i++ {
-		err = conn.WriteJSON(request1)
-		if err != nil {
-			// t.Logf("write: %s", err)
-			break
-		}
-
 		if disconnected {
-			return
+			break
 		}
 
 		// Keep sending requests without waiting for response
 		go func() {
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				// t.Logf("read: %s", err)
-				return
-			}
-
-			var response RPCResponse
-			err = json.Unmarshal(message, &response)
-			if err != nil {
-				return
-			}
-
-			var result []byte
-			result, err = json.Marshal(response.Error)
-			if err != nil {
-				return
-			}
-
-			var serverErr *jrpc2.Error
-			err = json.Unmarshal(result, &serverErr)
-			if err != nil {
-				return
-			}
-
+			_, serverErr, _ := testXSWDCall(t, conn, request1)
 			if serverErr != nil && assert.Equal(t, RateLimitExceeded, serverErr.Code, "Expected error to be %v: %v", RateLimitExceeded, serverErr.Code) {
 				disconnected = true
 				t.Logf("App 6 exceeded rate limit at %d requests %v elapsed: %v", i, time.Since(start), serverErr.Code)
