@@ -882,8 +882,8 @@ func TestXSWDServer(t *testing.T) {
 				assert.NotNil(t, response13a.Result, "Response 13a on application %d should not be nil", i)
 
 				// Test signature message matches somedata
-				assert.IsType(t, "string", response13a.Result, "Response 13a on application %d should be string: %T", i, response13a.Result)
-				decodeString, err := base64.StdEncoding.DecodeString(response13a.Result.(string))
+				assert.IsType(t, map[string]interface{}{}, response13a.Result, "Response 13a on application %d should be map[string]interface{}: %T", i, response13a.Result)
+				decodeString, err := base64.StdEncoding.DecodeString(response13a.Result.(map[string]interface{})["signature"].(string))
 				assert.NoErrorf(t, err, "Decode 13 on application %d should not error: %s", i, err)
 				signer, message, err := server.wallet.CheckSignature(decodeString)
 				assert.NoErrorf(t, err, "Reading signature on application %d should not error: %s", i, err)
@@ -894,7 +894,7 @@ func TestXSWDServer(t *testing.T) {
 				server.requestHandler = func(ad *ApplicationData, r *jrpc2.Request) Permission { return AlwaysAllow }
 
 				// Test XSWD CheckSignature result matches walletapi results
-				var result13b Signature_Result
+				var result13b CheckSignature_Result
 				request13b := jsonrpc.RPCRequest{
 					JSONRPC: "2.0",
 					ID:      1,
@@ -1714,8 +1714,8 @@ func TestXSWDServerWithPort(t *testing.T) {
 			assert.NoErrorf(t, err, "Request 6 %s should not error: %s", request6.Method, err)
 			assert.NotNil(t, response6, "Response 6 should not be nil")
 			assert.Nil(t, serverErr, "Response 6 should not have error: %v", serverErr)
-			assert.IsType(t, "string", response6.Result, "Response 6 should be string: %T", response6.Result)
-			assert.Equal(t, endpoint, response6.Result.(string))
+			assert.IsType(t, map[string]interface{}{}, response6.Result, "Response 6 should be map[string]interface{}: %T", response6.Result)
+			assert.Equal(t, endpoint, response6.Result.(map[string]interface{})["endpoint"].(string))
 		})
 
 		// // Request 7

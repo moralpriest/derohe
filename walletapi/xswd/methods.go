@@ -19,8 +19,16 @@ type Subscribe_Params struct {
 }
 
 type Signature_Result struct {
+	Signature []byte `json:"signature"`
+}
+
+type CheckSignature_Result struct {
 	Signer  string `json:"signer"`
 	Message string `json:"message"`
+}
+
+type GetDaemon_Result struct {
+	Endpoint string `json:"endpoint"`
 }
 
 func HasMethod(ctx context.Context, p HasMethod_Params) bool {
@@ -59,7 +67,7 @@ func Unsubscribe(ctx context.Context, p Subscribe_Params) bool {
 }
 
 // SignData returned as DERO signed message
-func SignData(ctx context.Context, p []byte) (signed []byte, err error) {
+func SignData(ctx context.Context, p []byte) (result Signature_Result, err error) {
 	w := rpcserver.FromContext(ctx)
 	xswd := w.Extra["xswd"].(*XSWD)
 	if xswd.wallet == nil {
@@ -67,13 +75,13 @@ func SignData(ctx context.Context, p []byte) (signed []byte, err error) {
 		return
 	}
 
-	signed = xswd.wallet.SignData(p)
+	result.Signature = xswd.wallet.SignData(p)
 
 	return
 }
 
 // CheckSignature of DERO signed message
-func CheckSignature(ctx context.Context, p []byte) (result Signature_Result, err error) {
+func CheckSignature(ctx context.Context, p []byte) (result CheckSignature_Result, err error) {
 	w := rpcserver.FromContext(ctx)
 	xswd := w.Extra["xswd"].(*XSWD)
 	if xswd.wallet == nil {
@@ -95,9 +103,9 @@ func CheckSignature(ctx context.Context, p []byte) (result Signature_Result, err
 }
 
 // GetDaemon endpoint from connected wallet
-func GetDaemon(ctx context.Context) (result string, err error) {
+func GetDaemon(ctx context.Context) (result GetDaemon_Result, err error) {
 	if walletapi.Daemon_Endpoint_Active != "" {
-		result = walletapi.Daemon_Endpoint_Active
+		result.Endpoint = walletapi.Daemon_Endpoint_Active
 	} else {
 		err = fmt.Errorf("XSWD could not get daemon endpoint from wallet")
 	}
