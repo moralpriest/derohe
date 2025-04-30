@@ -176,23 +176,16 @@ func handle_easymenu_post_open_command(l *readline.Instance, line string) (proce
 			break
 		}
 
+		scid, err := ReadSCID(l)
+		if err != nil {
+			logger.Error(err, "error reading SCID")
+			break
+		}
+
 		a, err := ReadAddress(l, wallet)
 		if err != nil {
 			logger.Error(err, "error reading address")
 			break
-		}
-
-		// Request SCID from integrated address or from input
-		var scid crypto.Hash
-		if a.Arguments != nil && a.Arguments.HasValue(rpc.RPC_ASSET, rpc.DataHash) {
-			scid = a.Arguments.Value(rpc.RPC_ASSET, rpc.DataHash).(crypto.Hash)
-			logger.Info("Address has a integrated SCID", "scid", scid)
-		} else {
-			scid, err = ReadSCID(l)
-			if err != nil {
-				logger.Error(err, "error reading SCID")
-				break
-			}
 		}
 
 		var amount_to_transfer uint64

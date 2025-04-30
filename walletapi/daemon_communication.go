@@ -198,6 +198,7 @@ func (w *Wallet_Memory) sync_loop() {
 			continue
 		}
 
+		var zerohash crypto.Hash
 		if len(w.account.EntriesNative) == 0 {
 			if err := w.Sync_Wallet_Memory_With_Daemon(); err != nil {
 				logger.Error(err, "wallet syncing err")
@@ -205,8 +206,8 @@ func (w *Wallet_Memory) sync_loop() {
 		} else {
 			for k := range w.account.EntriesNative {
 				err := w.Sync_Wallet_Memory_With_Daemon_internal(k)
-				if err != nil {
-					globals.Logger.V(3).Error(err, "Error while syncing SCID", "scid", k)
+				if k == zerohash && err != nil {
+					logger.Error(err, "wallet syncing err")
 				}
 			}
 		}

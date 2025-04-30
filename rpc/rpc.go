@@ -366,7 +366,6 @@ const RPC_VALUE_TRANSFER = "V"    // uint64, this is representation and is only 
 const RPC_COMMENT = "C"           // optional,string, used for display MSG to user
 const RPC_EXPIRY = "E"            // optional,time used for Expiry for this service call
 const RPC_REPLYBACK_ADDRESS = "R" // this is mandatory this is an address,otherwise how will otherside respond
-const RPC_ASSET = "A"             // this is optional, a SCID to inform which asset we want to receive, by default DERO
 //RPC will include own address so as the other enc can respond
 
 const RPC_NEEDS_REPLYBACK_ADDRESS = "N" //optional, uint64
