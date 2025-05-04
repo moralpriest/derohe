@@ -18,37 +18,36 @@ package main
 
 /// this file implements the wallet and rpc wallet
 
-import "io"
-import "os"
-import "fmt"
-import "time"
-import "sync"
-import "strings"
-import "strconv"
-import "runtime"
+import (
+	"fmt"
+	"io"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
-import "sync/atomic"
+	"github.com/chzyer/readline"
+	"github.com/deroproject/derohe/config"
+	"github.com/deroproject/derohe/globals"
+	"github.com/deroproject/derohe/walletapi"
+	"github.com/deroproject/derohe/walletapi/mnemonics"
+	"github.com/docopt/docopt-go"
+	"github.com/go-logr/logr"
+)
 
 //import "io/ioutil"
 //import "bufio"
 //import "bytes"
 //import "net/http"
 
-import "github.com/go-logr/logr"
-
-import "github.com/chzyer/readline"
-import "github.com/docopt/docopt-go"
-
 //import "github.com/vmihailenco/msgpack"
 
 //import "github.com/deroproject/derosuite/address"
 
-import "github.com/deroproject/derohe/config"
-
 //import "github.com/deroproject/derohe/crypto"
-import "github.com/deroproject/derohe/globals"
-import "github.com/deroproject/derohe/walletapi"
-import "github.com/deroproject/derohe/walletapi/mnemonics"
 
 //import "encoding/json"
 
@@ -75,7 +74,7 @@ Usage:
   --restore-deterministic-wallet    Restore wallet from previously saved recovery seed
   --electrum-seed=<recovery-seed>   Seed to use while restoring wallet
   --socks-proxy=<socks_ip:port>  Use a proxy to connect to Daemon.
-  --remote      use hard coded remote daemon https://rwallet.dero.live
+  --remote      use hard coded remote daemon (node.derofoundation.org:11012)
   --daemon-address=<host:port>    Use daemon instance at <host>:<port> or https://domain
   --rpc-server      Run rpc server, so wallet is accessible using api
   --rpc-bind=<127.0.0.1:20209>  Wallet binds on this ip address and port
