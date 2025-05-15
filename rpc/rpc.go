@@ -1,8 +1,10 @@
 package rpc
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"time"
 
@@ -171,14 +173,18 @@ func (args Arguments) CheckPack(limit int) ([]byte, error) {
 	}
 	if len(packed) == limit {
 		return packed, nil
-	} else { // we need to fill with 0 values, upto limit size
-
-		fill_count := limit - len(packed)
-		for i := 0; i < fill_count; i++ {
-			packed = append(packed, 0)
-		}
-
 	}
+
+	fill_count := limit - len(packed)
+	padding := make([]byte, fill_count)
+
+	if _, err := rand.Read(padding); err != nil {
+		// We are matching go's error handling of crypto/rand.Read for go versions < 1.24
+		fmt.Printf("Fatal error crypto/rand failed to read random data: %s\n", err)
+		os.Exit(1)
+	}
+
+	packed = append(packed, padding...)
 
 	return packed, nil
 }
