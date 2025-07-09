@@ -1,0 +1,75 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+*.txt
+LICENSE
+
+# Development and test files
+test/
+tests/
+*.test
+*.spec
+coverage/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+*.db
+
+# Environment and config files
+.env
+.env.*
+*.config
+config.local.*
+
+# Docker related
+Dockerfile*
+.dockerignore
+docker-compose*
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDE specific files
+*.iml
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Go specific
+*.prof
+*.out
+*.test
+*.prof
+*.trace
+
+# Project-specific large or unnecessary directories
+vendor/
+build/
+.cache/ 
