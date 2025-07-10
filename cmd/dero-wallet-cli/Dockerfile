@@ -41,6 +41,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=mod \
     upx --best --lzma dero-wallet-cli && \
     rm -rf /go/pkg /go/src
 
+# Create user and group files for non-root execution
+RUN addgroup -g 1000 dero && \
+    adduser -D -s /bin/sh -u 1000 -G dero dero
+
 # Stage 2: Create the final minimal image
 FROM scratch
 
@@ -53,12 +57,19 @@ LABEL org.opencontainers.image.description="Dero wallet CLI"
 LABEL org.opencontainers.image.source="https://github.com/civilware/derohe"
 LABEL maintainer="moralpriest@tutamail.com"
 
+# Copy user/group files from builder stage
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /etc/group /etc/group
+
 # Copy the binary from builder
 COPY --from=builder /app/dero-wallet-cli /dero-wallet-cli
 
 # Health check (if the application supports it)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD /dero-wallet-cli --version || exit 1
+
+# Switch to non-root user
+USER dero
 
 # Default command
 ENTRYPOINT ["/dero-wallet-cli"]

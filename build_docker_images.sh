@@ -18,6 +18,21 @@ if ! command -v docker &>/dev/null; then
   exit 1
 fi
 
+# Create go.mod and go.sum if they don't exist
+setup_go_modules() {
+  if [ ! -f go.mod ]; then
+    echo "Creating go.mod file..."
+    go mod init derohe
+  fi
+  if [ ! -f go.sum ]; then
+    echo "Creating go.sum file..."
+    go mod tidy
+  fi
+}
+
+echo "Setting up Go module files..."
+setup_go_modules
+
 echo "Building Docker images with tag: $TAG"
 if [ -n "$DOCKERHUB_USER" ]; then
   echo "Docker Hub user: $DOCKERHUB_USER (images will be tagged and pushed)"

@@ -34,6 +34,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=mod \
     upx --best --lzma derod && \
     rm -rf /go/pkg /go/src
 
+# Create user and group files for non-root execution
+RUN addgroup -g 1000 dero && \
+    adduser -D -s /bin/sh -u 1000 -G dero dero
+
 # Stage 2: Create the final minimal image from scratch
 FROM scratch
 
@@ -48,6 +52,10 @@ LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.description="Dero daemon (minimal)"
 LABEL org.opencontainers.image.source="https://github.com/civilware/derohe"
 LABEL maintainer="moralpriest@tutamail.com"
+
+# Copy user/group files from builder stage
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /etc/group /etc/group
 
 # Copy only the binary (no SSL certificates for minimal size)
 COPY --from=builder /app/derod /derod
@@ -65,6 +73,9 @@ EXPOSE ${GETWORK_PORT}/tcp
 # that can test the RPC endpoint (port 9999) from outside the container
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD /derod --version || exit 1
+
+# Switch to non-root user
+USER dero
 
 # Default command with arguments
 ENTRYPOINT ["/derod"]

@@ -11,6 +11,7 @@ This guide explains how to build and use the Docker images for all DERO project 
 
 ## Prerequisites
 - [Docker](https://docs.docker.com/get-docker/) installed
+- [Go (golang)](https://golang.org/dl/) installed (required for building images, as the build script may generate `go.mod`/`go.sum`)
 - (Optional) [WSL2](https://docs.microsoft.com/en-us/windows/wsl/) for Windows users
 
 ---
@@ -19,6 +20,8 @@ This guide explains how to build and use the Docker images for all DERO project 
 
 ### Script Tag and Docker Hub Arguments
 The build script accepts an **optional tag argument** and an **optional Docker Hub username**. If omitted, the default tag is `local` and images are not pushed.
+
+**The build script will also automatically create `go.mod` and `go.sum` files if they are missing, ensuring Docker builds do not fail due to missing Go module files.**
 
 **Examples:**
 ```sh
@@ -50,6 +53,11 @@ From the project root, run:
 ```sh
 ./build_docker_images.sh [tag] [dockerhub-username]
 ```
+
+---
+
+## Security Note: Non-root Containers
+All DERO Docker images now run as a non-root user (`dero`, UID 1000) for improved security. If you mount host volumes, ensure the host directory is writable by UID 1000.
 
 ---
 
@@ -115,7 +123,7 @@ docker run --rm -it dero-simulator:local
 ## Troubleshooting
 - **Data lost after restart?** Use volumes!
 - **Can't connect to node?** Check port mappings and firewall.
-- **Permission errors?** Ensure your user has access to the host directory.
+- **Permission errors?** Ensure your user has access to the host directory and that UID 1000 can write to it.
 - **Windows path issues?** Use double backslashes or forward slashes in PowerShell.
 
 ---
