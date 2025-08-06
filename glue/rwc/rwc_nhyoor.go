@@ -3,7 +3,8 @@ package rwc
 import (
 	"context"
 	"io"
-	"nhooyr.io/websocket"
+
+	"github.com/coder/websocket"
 )
 
 type ReadWriteCloserNhooyr struct {

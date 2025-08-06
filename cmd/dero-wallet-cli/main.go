@@ -340,7 +340,8 @@ func main() {
 			}
 		} else if err == io.EOF {
 			//			break
-			time.Sleep(time.Second)
+			//time.Sleep(time.Second)
+			continue
 		}
 
 		// pass command to suitable handler
@@ -358,6 +359,7 @@ func main() {
 		}
 
 	}
+
 	prompt_mutex.Lock()
 	globals.Exit_In_Progress = true
 	prompt_mutex.Unlock()

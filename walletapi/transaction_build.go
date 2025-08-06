@@ -1,17 +1,20 @@
 package walletapi
 
-import "fmt"
-import "strconv"
-import "math/big"
+import (
+	"fmt"
+	"math/big"
+	"strconv"
 
-//import "encoding/binary"
-import mathrand "math/rand"
-import "github.com/deroproject/derohe/globals"
-import "github.com/deroproject/derohe/rpc"
-import "github.com/deroproject/derohe/config"
-import "github.com/deroproject/derohe/transaction"
-import "github.com/deroproject/derohe/cryptography/crypto"
-import "github.com/deroproject/derohe/cryptography/bn256"
+	//import "encoding/binary"
+	mathrand "math/rand"
+
+	"github.com/deroproject/derohe/config"
+	"github.com/deroproject/derohe/cryptography/bn256"
+	"github.com/deroproject/derohe/cryptography/crypto"
+	"github.com/deroproject/derohe/globals"
+	"github.com/deroproject/derohe/rpc"
+	"github.com/deroproject/derohe/transaction"
+)
 
 // this is run some tests and benchmarks
 type GenerateProofFunc func(scid crypto.Hash, scid_index int, s *crypto.Statement, witness *crypto.Witness, u *bn256.G1, txid crypto.Hash, burn_value uint64) *crypto.Proof
@@ -169,20 +172,27 @@ rebuild_tx:
 					panic("currently we donot support ring size >= 512")
 				}
 
-				asset.RPCType = transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR
+				asset.RPCType = transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR_V2
 
 				data, _ := transfers[t].Payload_RPC.CheckPack(transaction.PAYLOAD0_LIMIT)
 
-				shared_key := crypto.GenerateSharedSecret(r, publickeylist[i])
+				ephemeral_key := crypto.ShakeXOF(publickeylist[i].String(), sender_secret.Bytes(), roothash[:])
+				ephemeral_seed := crypto.ShakeXOF(sender.String(), ephemeral_key[:], rinputs, publickeylist[i].EncodeCompressed())
+				ephemeral_scalar := new(big.Int).SetBytes(ephemeral_seed[:])
+				ephemeral_scalar = ephemeral_scalar.Mod(ephemeral_scalar, bn256.Order)
+				ephemeral_pub := crypto.GPoint.ScalarMult(crypto.GetBNRed(ephemeral_scalar))
 
-				asset.RPCPayload = append([]byte{byte(uint(witness_index[1]))}, data...)
+				shared_key := crypto.GenerateSharedSecret(ephemeral_scalar, publickeylist[i])
+
+				payload := append([]byte{byte(uint(witness_index[1]))}, data...)
 				//fmt.Printf("buulding shared_key %x  index of receiver %d\n",shared_key,i)
 				//fmt.Printf("building plaintext payload %x\n",asset.RPCPayload)
 
 				//fmt.Printf("%d packed rpc payload %d %x\n ", t, len(data), data)
 				// make sure used data encryption is optional, just in case we would like to play together with ring members
 				// we intoduce an element to create dependency of input key, so receiver cannot prove otherwise
-				crypto.EncryptDecryptUserData(crypto.Keccak256(shared_key[:], publickeylist[i].EncodeCompressed()), asset.RPCPayload)
+				crypto.EncryptDecryptUserData(crypto.Keccak256(shared_key[:], publickeylist[i].EncodeCompressed()), payload)
+				asset.RPCPayload = append(ephemeral_pub.EncodeCompressed(), payload...)
 
 				//fmt.Printf("building encrypted payload %x\n",asset.RPCPayload)
 
