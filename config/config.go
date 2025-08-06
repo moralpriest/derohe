@@ -16,10 +16,12 @@
 
 package config
 
-import "github.com/satori/go.uuid"
+import (
+	"github.com/deroproject/derohe/cryptography/crypto"
+	uuid "github.com/satori/go.uuid"
+)
 
 //import "github.com/caarlos0/env/v6"
-import "github.com/deroproject/derohe/cryptography/crypto"
 
 // all global configuration variables are picked from here
 
@@ -136,4 +138,4 @@ var Testnet = CHAIN_CONFIG{Name: "testnet", // testnet will always have last 3 b
 }
 
 // mainnet has a remote daemon node, which can be used be default, if user provides a  --remote flag
-const REMOTE_DAEMON = "89.38.99.117" // "https://rwallet.dero.live"
+const REMOTE_DAEMON = "node.derofoundation.org:11012" // "89.38.99.117" // "https://rwallet.dero.live"

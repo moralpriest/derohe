@@ -122,7 +122,7 @@ var Daemon_Endpoint_Active string
 
 func get_daemon_address() string {
 	if globals.Arguments["--remote"] == true && globals.IsMainnet() {
-		Daemon_Endpoint_Active = config.REMOTE_DAEMON + fmt.Sprintf(":%d", config.Mainnet.RPC_Default_Port)
+		Daemon_Endpoint_Active = config.REMOTE_DAEMON // + fmt.Sprintf(":%d", config.Mainnet.RPC_Default_Port)
 	}
 
 	// if user provided endpoint has error, use default
@@ -200,6 +200,7 @@ func (w *Wallet_Memory) sync_loop() {
 			continue
 		}
 
+		var zerohash crypto.Hash
 		if len(w.account.EntriesNative) == 0 {
 			if err := w.Sync_Wallet_Memory_With_Daemon(); err != nil {
 				logger.Error(err, "wallet syncing err")
@@ -207,8 +208,8 @@ func (w *Wallet_Memory) sync_loop() {
 		} else {
 			for k := range w.account.EntriesNative {
 				err := w.Sync_Wallet_Memory_With_Daemon_internal(k)
-				if err != nil {
-					globals.Logger.V(3).Error(err, "Error while syncing SCID", "scid", k)
+				if k == zerohash && err != nil {
+					logger.Error(err, "wallet syncing err")
 				}
 			}
 		}
@@ -925,12 +926,27 @@ func (w *Wallet_Memory) synchistory_block(scid crypto.Hash, topo int64) (err err
 								}
 
 								// we need to brute force receiver in this case, if amount sent is zero
-								if entry.Amount == entry.Burn && tx.Payloads[t].RPCType == transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR {
-									shared_key := crypto.GenerateSharedSecret(r, tx.Payloads[t].Statement.Publickeylist[k])
-
+								if entry.Amount == entry.Burn && (tx.Payloads[t].RPCType == transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR || tx.Payloads[t].RPCType == transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR_V2) {
+									var try_shared_key [32]byte
 									var data_copy []byte
-									data_copy = append(data_copy, tx.Payloads[t].RPCPayload...)
-									crypto.EncryptDecryptUserData(crypto.Keccak256(shared_key[:], tx.Payloads[t].Statement.Publickeylist[k].EncodeCompressed()), data_copy)
+									switch tx.Payloads[t].RPCType {
+									case transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR:
+										try_shared_key = crypto.GenerateSharedSecret(r, tx.Payloads[t].Statement.Publickeylist[k])
+										data_copy = append(data_copy, tx.Payloads[t].RPCPayload...)
+									case transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR_V2:
+										ephemeral_key := crypto.ShakeXOF(tx.Payloads[t].Statement.Publickeylist[k].String(), w.account.Keys.Secret.BigInt().Bytes(), tx.Payloads[t].Statement.Roothash[:])
+										ephemeral_seed := crypto.ShakeXOF(w.account.Keys.Public.G1().String(), ephemeral_key[:], rinputs, tx.Payloads[t].Statement.Publickeylist[k].EncodeCompressed())
+										ephemeral_scalar := new(big.Int).SetBytes(ephemeral_seed[:])
+										ephemeral_scalar = ephemeral_scalar.Mod(ephemeral_scalar, bn256.Order)
+										try_shared_key = crypto.GenerateSharedSecret(ephemeral_scalar, tx.Payloads[t].Statement.Publickeylist[k])
+										data_copy = append(data_copy, tx.Payloads[t].RPCPayload[33:]...)
+									default:
+										entry.PayloadError = fmt.Sprintf("unknown payload type %d", tx.Payloads[t].RPCPayload)
+										entry.Payload = tx.Payloads[t].RPCPayload
+										continue
+									}
+
+									crypto.EncryptDecryptUserData(crypto.Keccak256(try_shared_key[:], tx.Payloads[t].Statement.Publickeylist[k].EncodeCompressed()), data_copy)
 
 									var args rpc.Arguments
 									if err = args.UnmarshalBinary(data_copy[1:]); err != nil {
@@ -952,18 +968,17 @@ func (w *Wallet_Memory) synchistory_block(scid crypto.Hash, topo int64) (err err
 									x.Add(new(bn256.G1).Set(&x), tx.Payloads[t].Statement.C[k]) // get the blinder
 									blinder := &x
 
-									shared_key := crypto.GenerateSharedSecret(r, tx.Payloads[t].Statement.Publickeylist[k])
-
 									// proof is blinder + amount transferred, it will recover the encrypted rpc payload also
 									// enable sender side proofs
 									proof := rpc.NewAddressFromKeys((*crypto.Point)(blinder))
 									proof.Proof = true
-									proof.Arguments = rpc.Arguments{{Name: "H", DataType: rpc.DataHash, Value: crypto.Hash(shared_key)}, {Name: rpc.RPC_VALUE_TRANSFER, DataType: rpc.DataUint64, Value: uint64(entry.Amount - entry.Burn)}}
-									entry.Proof = proof.String()
 									entry.PayloadType = tx.Payloads[t].RPCType
 									switch tx.Payloads[t].RPCType {
 
 									case transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR:
+										shared_key := crypto.GenerateSharedSecret(r, tx.Payloads[t].Statement.Publickeylist[k])
+
+										proof.Arguments = rpc.Arguments{{Name: "H", DataType: rpc.DataHash, Value: crypto.Hash(shared_key)}, {Name: rpc.RPC_VALUE_TRANSFER, DataType: rpc.DataUint64, Value: uint64(entry.Amount - entry.Burn)}}
 
 										crypto.EncryptDecryptUserData(crypto.Keccak256(shared_key[:], tx.Payloads[t].Statement.Publickeylist[k].EncodeCompressed()), tx.Payloads[t].RPCPayload)
 										//fmt.Printf("decoded plaintext payload t %d  %x\n",t,tx.Payloads[t].RPCPayload)
@@ -980,7 +995,29 @@ func (w *Wallet_Memory) synchistory_block(scid crypto.Hash, topo int64) (err err
 										_ = args
 
 									//	fmt.Printf("data received %s idx %d arguments %s\n", string(entry.Payload), sender_idx, args)
+									case transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR_V2:
+										ephemeral_key := crypto.ShakeXOF(tx.Payloads[t].Statement.Publickeylist[k].String(), w.account.Keys.Secret.BigInt().Bytes(), tx.Payloads[t].Statement.Roothash[:])
+										ephemeral_seed := crypto.ShakeXOF(w.account.Keys.Public.G1().String(), ephemeral_key[:], rinputs, tx.Payloads[t].Statement.Publickeylist[k].EncodeCompressed())
+										ephemeral_scalar := new(big.Int).SetBytes(ephemeral_seed[:])
+										ephemeral_scalar = ephemeral_scalar.Mod(ephemeral_scalar, bn256.Order)
 
+										shared_key := crypto.GenerateSharedSecret(ephemeral_scalar, tx.Payloads[t].Statement.Publickeylist[k])
+
+										proof.Arguments = rpc.Arguments{{Name: "H", DataType: rpc.DataHash, Value: crypto.Hash(shared_key)}, {Name: rpc.RPC_VALUE_TRANSFER, DataType: rpc.DataUint64, Value: uint64(entry.Amount - entry.Burn)}}
+
+										payload := tx.Payloads[t].RPCPayload[33:]
+
+										crypto.EncryptDecryptUserData(crypto.Keccak256(shared_key[:], tx.Payloads[t].Statement.Publickeylist[k].EncodeCompressed()), payload)
+
+										addr := rpc.NewAddressFromKeys((*crypto.Point)(w.account.Keys.Public.G1()))
+										addr.Mainnet = w.GetNetwork()
+										entry.Sender = addr.String()
+
+										entry.Payload = append(entry.Payload, payload[1:]...)
+										entry.Data = append(entry.Data, payload...)
+
+										args, _ := entry.ProcessPayload()
+										_ = args
 									default:
 										entry.PayloadError = fmt.Sprintf("unknown payload type %d", tx.Payloads[t].RPCType)
 										entry.Payload = tx.Payloads[t].RPCPayload
@@ -992,6 +1029,7 @@ func (w *Wallet_Memory) synchistory_block(scid crypto.Hash, topo int64) (err err
 									addr.Mainnet = w.GetNetwork()
 
 									entry.Destination = addr.String()
+									entry.Proof = proof.String()
 
 									//fmt.Printf("t %d height %d Sent funds to %s entry %+v\n",t, tx.Height, addr.String(), entry)
 									break
@@ -1011,18 +1049,17 @@ func (w *Wallet_Memory) synchistory_block(scid crypto.Hash, topo int64) (err err
 
 							blinder := &x
 
-							shared_key := crypto.GenerateSharedSecret(w.account.Keys.Secret.BigInt(), tx.Payloads[t].Statement.D)
-
 							// enable receiver side proofs
 							proof := rpc.NewAddressFromKeys((*crypto.Point)(blinder))
 							proof.Proof = true
-							proof.Arguments = rpc.Arguments{{Name: "H", DataType: rpc.DataHash, Value: crypto.Hash(shared_key)}, {Name: rpc.RPC_VALUE_TRANSFER, DataType: rpc.DataUint64, Value: uint64(entry.Amount)}}
-							entry.Proof = proof.String()
 
 							entry.PayloadType = tx.Payloads[t].RPCType
 							switch tx.Payloads[t].RPCType {
 
-							case 0:
+							case transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR:
+								shared_key := crypto.GenerateSharedSecret(w.account.Keys.Secret.BigInt(), tx.Payloads[t].Statement.D)
+
+								proof.Arguments = rpc.Arguments{{Name: "H", DataType: rpc.DataHash, Value: crypto.Hash(shared_key)}, {Name: rpc.RPC_VALUE_TRANSFER, DataType: rpc.DataUint64, Value: uint64(entry.Amount)}}
 
 								//fmt.Printf("decoding encrypted payload %x\n",tx.Payloads[t].RPCPayload)
 								crypto.EncryptDecryptUserData(crypto.Keccak256(shared_key[:], w.GetAddress().PublicKey.EncodeCompressed()), tx.Payloads[t].RPCPayload)
@@ -1049,11 +1086,50 @@ func (w *Wallet_Memory) synchistory_block(scid crypto.Hash, topo int64) (err err
 								_ = args
 
 							//	fmt.Printf("data received %s idx %d arguments %s\n", string(entry.Payload), sender_idx, args)
+							case transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR_V2:
+								payload := tx.Payloads[t].RPCPayload[33:]
+
+								ephemeral_pub := new(bn256.G1)
+								err = ephemeral_pub.DecodeCompressed(tx.Payloads[t].RPCPayload[:33])
+								if err != nil {
+									entry.PayloadError = fmt.Sprintf("error decoding ephemeral public key with payload type %d", tx.Payloads[t].RPCType)
+									entry.Payload = tx.Payloads[t].RPCPayload
+									continue
+								}
+
+								shared_key := crypto.GenerateSharedSecret(w.account.Keys.Secret.BigInt(), ephemeral_pub)
+
+								proof.Arguments = rpc.Arguments{{Name: "H", DataType: rpc.DataHash, Value: crypto.Hash(shared_key)}, {Name: rpc.RPC_VALUE_TRANSFER, DataType: rpc.DataUint64, Value: uint64(entry.Amount)}}
+
+								crypto.EncryptDecryptUserData(crypto.Keccak256(shared_key[:], w.GetAddress().PublicKey.EncodeCompressed()), payload)
+
+								sender_idx := uint(payload[0])
+								// if ring size is 2, the other party is the sender so mark it so
+								if uint(tx.Payloads[t].Statement.RingSize) == 2 {
+									sender_idx = 0
+									if j == 0 {
+										sender_idx = 1
+									}
+								}
+
+								if sender_idx <= uint(tx.Payloads[t].Statement.RingSize) {
+									addr := rpc.NewAddressFromKeys((*crypto.Point)(tx.Payloads[t].Statement.Publickeylist[sender_idx]))
+									addr.Mainnet = w.GetNetwork()
+									entry.Sender = addr.String()
+								}
+
+								entry.Payload = append(entry.Payload, payload[1:]...)
+								entry.Data = append(entry.Data, payload...)
+
+								args, _ := entry.ProcessPayload()
+								_ = args
 
 							default:
 								entry.PayloadError = fmt.Sprintf("unknown payload type %d", tx.Payloads[t].RPCType)
 								entry.Payload = tx.Payloads[t].RPCPayload
 							}
+
+							entry.Proof = proof.String()
 
 							//fmt.Printf("Received %s amount in TX(%d) %s payment id %x Src_ID %s data %s\n", globals.FormatMoney(changed_balance-previous_balance), tx.Height, bl.Tx_hashes[i].String(),  entry.PaymentID, tx.Src_ID, tx.Data)
 							//fmt.Printf("Received  amount in TX(%d) %s payment id %x Src_ID %s data %s\n",  tx.Height, bl.Tx_hashes[i].String(),  entry.PaymentID, tx.SrcID, tx.Data)

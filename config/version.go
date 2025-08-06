@@ -20,4 +20,4 @@ import "github.com/blang/semver/v4"
 
 // right now it has to be manually changed
 // do we need to include git commitsha??
-var Version = semver.MustParse("3.5.3-140.DEROHE.STARGATE+13062023")
+var Version = semver.MustParse("3.5.4-141.DEROHE.STARGATE+04052025")
