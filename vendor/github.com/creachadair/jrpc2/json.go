@@ -9,33 +9,52 @@ import (
 	"github.com/creachadair/jrpc2/code"
 )
 
-// ErrInvalidVersion is returned by ParseRequests if one or more of the
-// requests in the input has a missing or invalid version marker.
-var ErrInvalidVersion error = &Error{Code: code.InvalidRequest, Message: "incorrect version marker"}
-
 // ParseRequests parses a single request or a batch of requests from JSON.
-//
-// If msg is syntactically valid apart from one or more of the requests having
-// a missing or invalid JSON-RPC version, ParseRequests returns ErrInvalidVersion
-// along with the parsed results.
-func ParseRequests(msg []byte) ([]*Request, error) {
-	var req jmessages
-	if err := req.parseJSON(msg); err != nil {
+// This function reports an error only if msg is not valid JSON. The caller
+// must check the individual results for their validity.
+func ParseRequests(msg []byte) ([]*ParsedRequest, error) {
+	var reqs jmessages
+	if err := reqs.parseJSON(msg); err != nil {
 		return nil, err
 	}
 	var err error
-	out := make([]*Request, len(req))
-	for i, req := range req {
-		if req.V != Version {
-			err = ErrInvalidVersion
-		}
-		out[i] = &Request{
-			id:     fixID(req.ID),
-			method: req.M,
-			params: req.P,
+	out := make([]*ParsedRequest, len(reqs))
+	for i, req := range reqs {
+		out[i] = &ParsedRequest{
+			ID:     string(fixID(req.ID)),
+			Method: req.M,
+			Params: req.P,
+			Error:  req.err,
 		}
 	}
 	return out, err
+}
+
+// A ParsedRequest is the parsed form of a request message. If a request is
+// valid, its Error field is nil. Otherwise, the Error field describes why the
+// request is invalid, and the other fields may be incomplete or missing.
+type ParsedRequest struct {
+	ID     string
+	Method string
+	Params json.RawMessage
+	Error  *Error
+}
+
+// ToRequest converts p to an equivalent server Request. If p.Error is not nil,
+// ToRequest returns nil.
+//
+// This method does not check validity. If p is from a successful call of
+// ParseRequests, the result will be valid; otherwise the caller must ensure
+// that the ID and parameters are valid JSON.
+func (p *ParsedRequest) ToRequest() *Request {
+	if p == nil || p.Error != nil {
+		return nil
+	}
+	return &Request{
+		id:     fixID(json.RawMessage(p.ID)),
+		method: p.Method,
+		params: p.Params,
+	}
 }
 
 // jmessages is either a single protocol message or an array of protocol
@@ -111,8 +130,8 @@ type jmessage struct {
 	// and R. Specifically, if M != "" then E and R must both be unset. This is
 	// checked during parsing.
 
-	batch bool  // this message was part of a batch
-	err   error // if not nil, this message is invalid and err is why
+	batch bool   // this message was part of a batch
+	err   *Error // if not nil, this message is invalid and err is why
 }
 
 // isValidID reports whether v is a valid JSON encoding of a request ID.
@@ -129,8 +148,13 @@ func isValidID(v json.RawMessage) bool {
 	return false // anything else is garbage
 }
 
+// isValidVersion reports whether v is a valid JSON-RPC version string.
+func isValidVersion(v string) bool { return v == Version }
+
 func (j *jmessage) fail(code code.Code, msg string) {
-	j.err = &Error{Code: code, Message: msg}
+	if j.err == nil {
+		j.err = &Error{Code: code, Message: msg}
+	}
 }
 
 func (j *jmessage) toJSON() ([]byte, error) {
@@ -221,6 +245,11 @@ func (j *jmessage) parseJSON(data []byte) error {
 		}
 	}
 
+	// Report an error for an invalid version marker
+	if !isValidVersion(j.V) {
+		j.fail(code.InvalidRequest, "invalid version marker")
+	}
+
 	// Report an error if request/response fields overlap.
 	if j.M != "" && (j.E != nil || j.R != nil) {
 		j.fail(code.InvalidRequest, "mixed request and reply fields")
@@ -239,8 +268,8 @@ func (j *jmessage) isRequestOrNotification() bool { return j.M != "" && j.E == n
 // isNotification reports whether j is a notification
 func (j *jmessage) isNotification() bool { return j.isRequestOrNotification() && fixID(j.ID) == nil }
 
-// fixID filters id, treating "null" as a synonym for an unset ID.  This
-// supports interoperation with JSON-RPC v1 where "null" is used as an ID for
+// fixID filters id, treating "null" as a synonym for an unset ID.  Some
+// implementations (possibly a vestige of v1) emit "null" as an ID for
 // notifications.
 func fixID(id json.RawMessage) json.RawMessage {
 	if !isNull(id) {
@@ -290,12 +319,11 @@ type strictFielder interface {
 //
 // For example:
 //
-//       var obj RequestType
-//       err := req.UnmarshalParams(jrpc2.StrictFields(&obj))`
-//
-func StrictFields(v interface{}) interface{} { return &strict{v: v} }
+//	var obj RequestType
+//	err := req.UnmarshalParams(jrpc2.StrictFields(&obj))`
+func StrictFields(v any) any { return &strict{v: v} }
 
-type strict struct{ v interface{} }
+type strict struct{ v any }
 
 func (s *strict) UnmarshalJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))

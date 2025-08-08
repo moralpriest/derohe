@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 // NewPos adapts a function to a jrpc2.Handler. The concrete value of fn must
@@ -16,7 +17,7 @@ import (
 // the type of fn does not have one of the accepted forms. Programs that need
 // to check for possible errors should call handler.Positional directly, and
 // use the Wrap method of the resulting FuncInfo to obtain the wrapper.
-func NewPos(fn interface{}, names ...string) Func {
+func NewPos(fn any, names ...string) Func {
 	fi, err := Positional(fn, names...)
 	if err != nil {
 		panic(err)
@@ -24,15 +25,61 @@ func NewPos(fn interface{}, names ...string) Func {
 	return fi.Wrap()
 }
 
+// structFieldNames reports whether atype is a struct or pointer to struct, and
+// if so returns a slice of the eligible field names in order of declaration.
+// If atype == nil or is not a (pointer to) struct, it returns false, nil.
+func structFieldNames(atype reflect.Type) (bool, []string) {
+	if atype == nil {
+		return false, nil
+	}
+	if atype.Kind() == reflect.Ptr {
+		atype = atype.Elem()
+	}
+	if atype.Kind() != reflect.Struct {
+		return false, nil
+	}
+
+	var names []string
+	for i := 0; i < atype.NumField(); i++ {
+		fi := atype.Field(i)
+		if !fi.IsExported() {
+			continue
+		}
+		if tag, ok := fi.Tag.Lookup("json"); ok {
+			if tag == "-" {
+				continue // explicitly omitted
+			}
+			name := strings.SplitN(tag, ",", 2)[0]
+			if name != "" {
+				names = append(names, name)
+				continue
+			}
+			// fall through to other cases
+		}
+		if tag, ok := fi.Tag.Lookup("jrpc"); ok {
+			names = append(names, tag)
+			continue
+		}
+		if fi.Anonymous {
+			// This is an untagged anonymous field. Tagged anonymous fields are
+			// handled by the cases above.
+			continue
+		}
+		name := strings.ToLower(fi.Name[:1]) + fi.Name[1:]
+		names = append(names, name)
+	}
+	return true, names
+}
+
 // Positional checks whether fn can serve as a jrpc2.Handler. The concrete
 // value of fn must be a function with one of the following type signature
 // schemes:
 //
-//   func(context.Context, X1, X2, ..., Xn) (Y, error)
-//   func(context.Context, X1, X2, ..., Xn) Y
-//   func(context.Context, X1, X2, ..., Xn) error
+//	func(context.Context, X1, X2, ..., Xn) (Y, error)
+//	func(context.Context, X1, X2, ..., Xn) Y
+//	func(context.Context, X1, X2, ..., Xn) error
 //
-// For JSON-marshalable types X_i and Y. If fn does not have one of these
+// for JSON-marshalable types X_i and Y. If fn does not have one of these
 // forms, Positional reports an error. The given names must match the number of
 // non-context arguments exactly. Variadic functions are not supported.
 //
@@ -44,15 +91,15 @@ func NewPos(fn interface{}, names ...string) Func {
 // When converted into a handler.Func, the wrapped function accepts a JSON
 // object with the field keys named. For example, given:
 //
-//   func add(ctx context.Context, x, y int) int { return x + y }
+//	func add(ctx context.Context, x, y int) int { return x + y }
 //
-//   fi, err := handler.Positional(add, "first", "second")
-//   // ...
-//   call := fi.Wrap()
+//	fi, err := handler.Positional(add, "first", "second")
+//	// ...
+//	call := fi.Wrap()
 //
 // the resulting JSON-RPC handler accepts a parameter object like:
 //
-//   {"first": 17, "second": 23}
+//	{"first": 17, "second": 23}
 //
 // where "first" is mapped to argument x and "second" to argument y.  Unknown
 // field keys generate an error. The field names are not required to match the
@@ -62,10 +109,10 @@ func NewPos(fn interface{}, names ...string) Func {
 // The wrapped function will also accept a JSON array with with (exactly) the
 // same number of elements as the positional parameters:
 //
-//   [17, 23]
+//	[17, 23]
 //
 // Unlike the object format, no arguments can be omitted in this format.
-func Positional(fn interface{}, names ...string) (*FuncInfo, error) {
+func Positional(fn any, names ...string) (*FuncInfo, error) {
 	if fn == nil {
 		return nil, errors.New("nil function")
 	}
@@ -140,7 +187,7 @@ func makeArgType(t reflect.Type, names []string) (reflect.Type, error) {
 // positional arguments.
 //
 // Preconditions: fv is a function and atype is its argument struct.
-func makeCaller(ft reflect.Type, fv reflect.Value, atype reflect.Type) interface{} {
+func makeCaller(ft reflect.Type, fv reflect.Value, atype reflect.Type) any {
 	atypes := []reflect.Type{ctxType, atype}
 
 	otypes := make([]reflect.Type, ft.NumOut())

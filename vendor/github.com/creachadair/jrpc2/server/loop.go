@@ -29,11 +29,11 @@ type Service interface {
 }
 
 // Static wraps a jrpc2.Assigner to trivially implement the Service interface.
-func Static(m jrpc2.Assigner) func() Service { return static{methods: m}.New }
+func Static(m jrpc2.Assigner) func() Service { return static{methods: m}.new }
 
 type static struct{ methods jrpc2.Assigner }
 
-func (s static) New() Service                            { return s }
+func (s static) new() Service                            { return s }
 func (s static) Assigner() (jrpc2.Assigner, error)       { return s.methods, nil }
 func (static) Finish(jrpc2.Assigner, jrpc2.ServerStatus) {}
 
@@ -86,7 +86,7 @@ func (n netAccepter) Accept(ctx context.Context) (channel.Channel, error) {
 // have returned. In addition, if ctx ends, any active servers will be stopped.
 func Loop(ctx context.Context, lst Accepter, newService func() Service, opts *LoopOptions) error {
 	serverOpts := opts.serverOpts()
-	log := func(string, ...interface{}) {}
+	log := func(string, ...any) {}
 	if serverOpts != nil && serverOpts.Logger != nil {
 		log = serverOpts.Logger.Printf
 	}

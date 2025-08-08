@@ -26,7 +26,7 @@ func (e Error) ErrCode() code.Code { return e.Code }
 // WithData marshals v as JSON and constructs a copy of e whose Data field
 // includes the result. If v == nil or if marshaling v fails, e is returned
 // without modification.
-func (e *Error) WithData(v interface{}) *Error {
+func (e *Error) WithData(v any) *Error {
 	if v == nil {
 		return e
 	} else if data, err := json.Marshal(v); err == nil {
@@ -47,7 +47,7 @@ var errClientStopped = errors.New("the client has been stopped")
 var errEmptyMethod = &Error{Code: code.InvalidRequest, Message: "empty method name"}
 
 // errNoSuchMethod is the error reported for an unknown method name.
-var errNoSuchMethod = &Error{Code: code.MethodNotFound, Message: "no such method"}
+var errNoSuchMethod = &Error{Code: code.MethodNotFound, Message: code.MethodNotFound.String()}
 
 // errDuplicateID is the error reported for a duplicated request ID.
 var errDuplicateID = &Error{Code: code.InvalidRequest, Message: "duplicate request ID"}
@@ -59,7 +59,10 @@ var errInvalidRequest = &Error{Code: code.ParseError, Message: "invalid request 
 var errEmptyBatch = &Error{Code: code.InvalidRequest, Message: "empty request batch"}
 
 // errInvalidParams is the error reported for invalid request parameters.
-var errInvalidParams = &Error{Code: code.InvalidParams, Message: "invalid parameters"}
+var errInvalidParams = &Error{Code: code.InvalidParams, Message: code.InvalidParams.String()}
+
+// errTaskNotExecuted is the internal sentinel error for an unassigned task.
+var errTaskNotExecuted = new(Error)
 
 // ErrConnClosed is returned by a server's push-to-client methods if they are
 // called after the client connection is closed.
@@ -67,6 +70,6 @@ var ErrConnClosed = errors.New("client connection is closed")
 
 // Errorf returns an error value of concrete type *Error having the specified
 // code and formatted message string.
-func Errorf(code code.Code, msg string, args ...interface{}) *Error {
+func Errorf(code code.Code, msg string, args ...any) *Error {
 	return &Error{Code: code, Message: fmt.Sprintf(msg, args...)}
 }
