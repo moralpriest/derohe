@@ -3,7 +3,7 @@
 [![GoDoc](https://img.shields.io/static/v1?label=godoc&message=reference&color=yellow)](https://pkg.go.dev/github.com/creachadair/jrpc2)
 
 This repository provides a Go module that implements a [JSON-RPC 2.0][spec] client and server.
-There is also a working [example in the Go playground](https://go.dev/play/p/fY-Pnvf03Hr).
+There is also a working [example in the Go playground](https://go.dev/play/p/GddvtiynMd5).
 
 ## Packages
 
@@ -15,11 +15,7 @@ There is also a working [example in the Go playground](https://go.dev/play/p/fY-
 
 *  Package [handler](http://godoc.org/github.com/creachadair/jrpc2/handler) defines support for adapting functions to service methods.
 
-*  Package [jctx](http://godoc.org/github.com/creachadair/jrpc2/jctx) implements an encoder and decoder for request context values, allowing context metadata to be propagated through JSON-RPC requests.
-
 *  Package [jhttp](http://godoc.org/github.com/creachadair/jrpc2/jhttp) allows clients and servers to use HTTP as a transport.
-
-*  Package [metrics](http://godoc.org/github.com/creachadair/jrpc2/metrics) defines a server metrics collector.
 
 *  Package [server](http://godoc.org/github.com/creachadair/jrpc2/server) provides support for running a server to handle multiple connections, and an in-memory implementation for testing.
 
@@ -55,19 +51,10 @@ This conflicts with the definition of batch requests, which asserts:
 
 and includes examples that contain request values with no ID (which are, perforce, notifications) and report errors back to the client. Since order may not be relied upon, and there are no IDs, the client cannot correctly match such responses back to their originating requests.
 
-This implementation resolves the conflict in favour of the notification rules. Specifically:
+This implementation resolves the conflict in favour of the batch rules. Specifically:
 
 -  If a batch is empty or not valid JSON, the server reports error -32700 (Invalid JSON) as a single error Response object.
 
 -  Otherwise, parse or validation errors resulting from any batch member without an ID are mapped to error objects with a `null` ID, in the same position in the reply as the corresponding request. Preservation of order is not required by the specification, but it ensures the server has stable behaviour.
 
 Because a server is allowed to reorder the results, a client should not depend on this implementation detail.
-
-### Non-standard server push
-
-The specification defines client and server as follows:
-
-> The Client is defined as the origin of `Request` objects and the handler of `Response` objects.
-> The Server is defined as the origin of `Response` objects and the handler of `Request` objects.
-
-Although a client may also be a server, and vice versa, the specification does not require them to do so. The server notification support defined in the `jrpc2` package is thus "non-standard" in that it allows the server to act as a client, and the client as a server, in the narrow context of "push" notifications and server callbacks. Otherwise the feature is not special: Requests sent by `*jrpc2.Server.Notify` and `*jrpc2.Server.Callback`are standard `Request` objects.

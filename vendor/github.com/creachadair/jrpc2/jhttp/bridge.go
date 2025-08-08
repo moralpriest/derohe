@@ -5,7 +5,6 @@
 package jhttp
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,13 +33,9 @@ import (
 // If the request completes, whether or not there is an error, the HTTP
 // response is 200 (OK) for ordinary requests or 204 (No Response) for
 // notifications, and the response body contains the JSON-RPC response.
-//
-// The bridge attaches the inbound HTTP request to the context passed to the
-// client, allowing an EncodeContext callback to retrieve state from the HTTP
-// headers. Use jhttp.HTTPRequest to retrieve the request from the context.
 type Bridge struct {
 	local    server.Local
-	parseReq func(*http.Request) ([]*jrpc2.Request, error)
+	parseReq func(*http.Request) ([]*jrpc2.ParsedRequest, error)
 	getter   *Getter
 }
 
@@ -55,6 +50,9 @@ func (b Bridge) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// If no parse hook is defined, insist that the method is POST and the
 	// content-type is application/json. Setting a hook disables these checks.
 	if b.parseReq == nil {
+		// Advertise that we accept POST application/json.
+		w.Header().Set("Accept-Post", "application/json")
+
 		if req.Method != "POST" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -74,12 +72,8 @@ func (b Bridge) serveInternal(w http.ResponseWriter, req *http.Request) error {
 	// The HTTP request requires a response, but the server will not reply if
 	// all the requests are notifications. Check whether we have any calls
 	// needing a response, and choose whether to wait for a reply based on that.
-	//
-	// Note that we are forgiving about a missing version marker in a request,
-	// since we can't tell at this point whether the server is willing to accept
-	// messages like that.
 	jreq, err := b.parseHTTPRequest(req)
-	if err != nil && err != jrpc2.ErrInvalidVersion {
+	if err != nil {
 		return err
 	}
 
@@ -90,50 +84,65 @@ func (b Bridge) serveInternal(w http.ResponseWriter, req *http.Request) error {
 	// To do this, we keep track of the inbound ID for each request so that we
 	// can map the responses back. This takes advantage of the fact that the
 	// *jrpc2.Client detangles batch order so that responses come back in the
-	// same order (modulo notifications) even if the server response did not
+	// same order (omitting notifications) even if the server response did not
 	// preserve order.
+	//
+	// Requests that are already known to be invalid are converted to error
+	// responses directly. Besides preventing the server from doing the same
+	// error check a second time, this avoids the issue that a remapped ID may
+	// obcure an invalid request ID (see #80).
+	var results []json.RawMessage
 
 	// Generate request specifications for the client.
-	var inboundID []string                // for requests
-	spec := make([]jrpc2.Spec, len(jreq)) // requests & notifications
-	for i, req := range jreq {
-		spec[i] = jrpc2.Spec{
-			Method: req.Method(),
-			Notify: req.IsNotification(),
+	var inboundID []string // for calls
+	var spec []jrpc2.Spec  // requests & notifications
+	for _, req := range jreq {
+		if req.Error != nil {
+			// Filter out statically invalid requests.
+			msg, err := marshalError(req)
+			if err != nil {
+				return err
+			}
+			results = append(results, msg)
+			continue
 		}
-		if req.HasParams() {
-			var p json.RawMessage
-			req.UnmarshalParams(&p)
-			spec[i].Params = p
-		}
-		if !spec[i].Notify {
-			inboundID = append(inboundID, req.ID())
+
+		spec = append(spec, jrpc2.Spec{
+			Method: req.Method,
+			Notify: req.ID == "",
+			Params: req.Params,
+		})
+		if req.ID != "" {
+			inboundID = append(inboundID, req.ID)
 		}
 	}
 
-	// Attach the HTTP request to the client context, so the encoder can see it.
-	ctx := context.WithValue(req.Context(), httpReqKey{}, req)
-	rsps, err := b.local.Client.Batch(ctx, spec)
-	if err != nil {
-		return err
+	if len(spec) != 0 {
+		rsps, err := b.local.Client.Batch(req.Context(), spec)
+		if err != nil {
+			return err
+		}
+		for i, rsp := range rsps {
+			// Map the responses back to their original IDs and marshal to JSON.
+			rsp.SetID(inboundID[i])
+			msg, err := json.Marshal(rsp)
+			if err != nil {
+				return err
+			}
+			results = append(results, msg)
+		}
 	}
 
-	// If all the requests were notifications, report success without responses.
-	if len(rsps) == 0 {
+	// If all the requests were notifications and there were no invalid ones,
+	// report success without responses.
+	if len(results) == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}
-
-	// Otherwise, map the responses back to their original IDs, and marshal the
-	// response back into the body.
-	for i, rsp := range rsps {
-		rsp.SetID(inboundID[i])
-	}
-
-	return b.encodeResponses(rsps, w)
+	return b.encodeResponses(results, w)
 }
 
-func (b Bridge) parseHTTPRequest(req *http.Request) ([]*jrpc2.Request, error) {
+func (b Bridge) parseHTTPRequest(req *http.Request) ([]*jrpc2.ParsedRequest, error) {
 	if b.parseReq != nil {
 		return b.parseReq(req)
 	}
@@ -144,7 +153,7 @@ func (b Bridge) parseHTTPRequest(req *http.Request) ([]*jrpc2.Request, error) {
 	return jrpc2.ParseRequests(body)
 }
 
-func (b Bridge) encodeResponses(rsps []*jrpc2.Response, w http.ResponseWriter) error {
+func (b Bridge) encodeResponses(rsps []json.RawMessage, w http.ResponseWriter) error {
 	// If there is only a single reply, send it alone; otherwise encode a batch.
 	// Per the spec (https://www.jsonrpc.org/specification#batch), this is OK;
 	// we are not required to respond to a batch with an array:
@@ -152,11 +161,11 @@ func (b Bridge) encodeResponses(rsps []*jrpc2.Response, w http.ResponseWriter) e
 	//   The Server SHOULD respond with an Array containing the corresponding
 	//   Response objects
 	//
-	data, err := marshalResponses(rsps)
-	if err != nil {
-		return err
+	if len(rsps) == 1 {
+		writeJSON(w, http.StatusOK, rsps[0])
+	} else {
+		writeJSON(w, http.StatusOK, rsps)
 	}
-	writeJSON(w, http.StatusOK, json.RawMessage(data))
 	return nil
 }
 
@@ -212,7 +221,7 @@ type BridgeOptions struct {
 	//
 	// Setting this hook disables the default requirement that the request
 	// method be POST and the content-type be application/json.
-	ParseRequest func(*http.Request) ([]*jrpc2.Request, error)
+	ParseRequest func(*http.Request) ([]*jrpc2.ParsedRequest, error)
 
 	// If non-nil, this function is used to parse a JSON-RPC method name and
 	// parameters from the URL of an HTTP GET request. If this function reports
@@ -221,7 +230,7 @@ type BridgeOptions struct {
 	// If this hook is set, all GET requests are handled by a Getter using this
 	// parse function, and are not passed to a ParseRequest hook even if one is
 	// defined.
-	ParseGETRequest func(*http.Request) (string, interface{}, error)
+	ParseGETRequest func(*http.Request) (string, any, error)
 }
 
 func (o *BridgeOptions) clientOptions() *jrpc2.ClientOptions {
@@ -238,36 +247,31 @@ func (o *BridgeOptions) serverOptions() *jrpc2.ServerOptions {
 	return o.Server
 }
 
-func (o *BridgeOptions) parseRequest() func(*http.Request) ([]*jrpc2.Request, error) {
+func (o *BridgeOptions) parseRequest() func(*http.Request) ([]*jrpc2.ParsedRequest, error) {
 	if o == nil {
 		return nil
 	}
 	return o.ParseRequest
 }
 
-func (o *BridgeOptions) parseGETRequest() func(*http.Request) (string, interface{}, error) {
+func (o *BridgeOptions) parseGETRequest() func(*http.Request) (string, any, error) {
 	if o == nil {
 		return nil
 	}
 	return o.ParseGETRequest
 }
 
-type httpReqKey struct{}
-
-// HTTPRequest returns the HTTP request associated with ctx, or nil. The
-// context passed to the JSON-RPC client by the Bridge will contain this value.
-func HTTPRequest(ctx context.Context) *http.Request {
-	req, ok := ctx.Value(httpReqKey{}).(*http.Request)
-	if ok {
-		return req
+// marshalError encodes an error response for an invalid request.
+func marshalError(req *jrpc2.ParsedRequest) ([]byte, error) {
+	v, err := json.Marshal(req.Error)
+	if err != nil {
+		return nil, err
 	}
-	return nil
-}
 
-// marshalResponses encodes a batch of JSON-RPC responses into JSON.
-func marshalResponses(rsps []*jrpc2.Response) ([]byte, error) {
-	if len(rsps) == 1 {
-		return json.Marshal(rsps[0])
+	// If the ID is empty, set the response ID to null.
+	id := req.ID
+	if id == "" {
+		id = "null"
 	}
-	return json.Marshal(rsps)
+	return []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"error":%s}`, id, string(v))), nil
 }

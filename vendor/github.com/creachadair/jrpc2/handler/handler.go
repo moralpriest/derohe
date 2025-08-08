@@ -17,17 +17,12 @@ import (
 	"github.com/creachadair/jrpc2/code"
 )
 
-// A Func adapts a function having the correct signature to a jrpc2.Handler.
-type Func func(context.Context, *jrpc2.Request) (interface{}, error)
-
-// Handle implements the jrpc2.Handler interface by calling m.
-func (m Func) Handle(ctx context.Context, req *jrpc2.Request) (interface{}, error) {
-	return m(ctx, req)
-}
+// A Func is wrapper for a jrpc2.Handler function.
+type Func func(context.Context, *jrpc2.Request) (any, error)
 
 // A Map is a trivial implementation of the jrpc2.Assigner interface that looks
-// up method names in a map of static jrpc2.Handler values.
-type Map map[string]jrpc2.Handler
+// up method names in a static map of function values.
+type Map map[string]Func
 
 // Assign implements part of the jrpc2.Assigner interface.
 func (m Map) Assign(_ context.Context, method string) jrpc2.Handler { return m[method] }
@@ -78,7 +73,7 @@ func (m ServiceMap) Names() []string {
 	return all
 }
 
-// New adapts a function to a jrpc2.Handler. The concrete value of fn must be
+// New adapts a function to a .Handler. The concrete value of fn must be
 // function accepted by Check. The resulting Func will handle JSON encoding and
 // decoding, call fn, and report appropriate errors.
 //
@@ -86,22 +81,11 @@ func (m ServiceMap) Names() []string {
 // type of fn does not have one of the accepted forms. Programs that need to
 // check for possible errors should call handler.Check directly, and use the
 // Wrap method of the resulting FuncInfo to obtain the wrapper.
-func New(fn interface{}) Func {
+func New(fn any) Func {
 	fi, err := Check(fn)
 	if err != nil {
 		panic(err)
 	}
-	return fi.Wrap()
-}
-
-// NewStrict acts as New, but enforces strict field checking on an argument of
-// struct type.
-func NewStrict(fn interface{}) Func {
-	fi, err := Check(fn)
-	if err != nil {
-		panic(err)
-	}
-	fi.strictFields = true
 	return fi.Wrap()
 }
 
@@ -121,15 +105,23 @@ type FuncInfo struct {
 	Argument     reflect.Type // the non-context argument type, or nil
 	Result       reflect.Type // the non-error result type, or nil
 	ReportsError bool         // true if the function reports an error
-	strictFields bool         // enforce strict field checking
-	posNames     []string     // positional field names (requires strictFields)
 
-	fn interface{} // the original function value
+	strictFields bool     // enforce strict field checking
+	posNames     []string // positional field names
+
+	fn any // the original function value
 }
 
-// Wrap adapts the function represented by fi in a Func that satisfies the
-// jrpc2.Handler interface.  The wrapped function can obtain the *jrpc2.Request
-// value from its context argument using the jrpc2.InboundRequest helper.
+// SetStrict sets the flag on fi that determines whether the wrapper it
+// generates will enforce strict field checking. If set true, the wrapper will
+// report an error when unmarshaling an object into a struct if the object
+// contains fields unknown by the struct. Strict field checking has no effect
+// for non-struct arguments.
+func (fi *FuncInfo) SetStrict(strict bool) *FuncInfo { fi.strictFields = strict; return fi }
+
+// Wrap adapts the function represented by fi in a Func.  The wrapped function
+// can obtain the *jrpc2.Request value from its context argument using the
+// jrpc2.InboundRequest helper.
 //
 // This method panics if fi == nil or if it does not represent a valid function
 // type. A FuncInfo returned by a successful call to Check is always valid.
@@ -153,24 +145,19 @@ func (fi *FuncInfo) Wrap() Func {
 
 	// Special case: If fn has the exact signature of the Handle method, don't do
 	// any (additional) reflection at all.
-	if f, ok := fi.fn.(func(context.Context, *jrpc2.Request) (interface{}, error)); ok {
+	if f, ok := fi.fn.(func(context.Context, *jrpc2.Request) (any, error)); ok {
 		return Func(f)
 	}
 
-	// If strict field checking is desired, ensure arguments are wrapped.
-	arg := fi.Argument
-	wrapArg := func(v reflect.Value) interface{} { return v.Interface() }
-	if fi.strictFields && arg != nil && !arg.Implements(strictType) {
-		names := fi.posNames
-		wrapArg = func(v reflect.Value) interface{} {
-			return &strict{v: v.Interface(), posNames: names}
-		}
-	}
+	// If strict field checking or positional decoding are enabled, ensure
+	// arguments are wrapped with the appropriate decoder stubs.
+	wrapArg := fi.argWrapper()
 
 	// Construct a function to unpack the parameters from the request message,
 	// based on the signature of the user's callback.
 	var newInput func(ctx reflect.Value, req *jrpc2.Request) ([]reflect.Value, error)
 
+	arg := fi.Argument
 	if arg == nil {
 		// Case 1: The function does not want any request parameters.
 		// Nothing needs to be decoded, but verify no parameters were passed.
@@ -209,11 +196,11 @@ func (fi *FuncInfo) Wrap() Func {
 	}
 
 	// Construct a function to decode the result values.
-	var decodeOut func([]reflect.Value) (interface{}, error)
+	var decodeOut func([]reflect.Value) (any, error)
 
 	if fi.Result == nil {
 		// The function returns only an error, the result is always nil.
-		decodeOut = func(vals []reflect.Value) (interface{}, error) {
+		decodeOut = func(vals []reflect.Value) (any, error) {
 			oerr := vals[0].Interface()
 			if oerr != nil {
 				return nil, oerr.(error)
@@ -222,12 +209,12 @@ func (fi *FuncInfo) Wrap() Func {
 		}
 	} else if !fi.ReportsError {
 		// The function returns only single non-error: err is always nil.
-		decodeOut = func(vals []reflect.Value) (interface{}, error) {
+		decodeOut = func(vals []reflect.Value) (any, error) {
 			return vals[0].Interface(), nil
 		}
 	} else {
 		// The function returns both a value and an error.
-		decodeOut = func(vals []reflect.Value) (interface{}, error) {
+		decodeOut = func(vals []reflect.Value) (any, error) {
 			if oerr := vals[1].Interface(); oerr != nil {
 				return nil, oerr.(error)
 			}
@@ -236,7 +223,7 @@ func (fi *FuncInfo) Wrap() Func {
 	}
 
 	call := reflect.ValueOf(fi.fn).Call
-	return Func(func(ctx context.Context, req *jrpc2.Request) (interface{}, error) {
+	return Func(func(ctx context.Context, req *jrpc2.Request) (any, error) {
 		args, ierr := newInput(reflect.ValueOf(ctx), req)
 		if ierr != nil {
 			return nil, ierr
@@ -249,34 +236,58 @@ func (fi *FuncInfo) Wrap() Func {
 // fn must be a function with one of the following type signature schemes, for
 // JSON-marshalable types X and Y:
 //
-//    func(context.Context) error
-//    func(context.Context) Y
-//    func(context.Context) (Y, error)
-//    func(context.Context, X) error
-//    func(context.Context, X) Y
-//    func(context.Context, X) (Y, error)
-//    func(context.Context, *jrpc2.Request) error
-//    func(context.Context, *jrpc2.Request) Y
-//    func(context.Context, *jrpc2.Request) (Y, error)
-//    func(context.Context, *jrpc2.Request) (interface{}, error)
+//	func(context.Context) error
+//	func(context.Context) Y
+//	func(context.Context) (Y, error)
+//	func(context.Context, X) error
+//	func(context.Context, X) Y
+//	func(context.Context, X) (Y, error)
+//	func(context.Context, *jrpc2.Request) error
+//	func(context.Context, *jrpc2.Request) Y
+//	func(context.Context, *jrpc2.Request) (Y, error)
+//	func(context.Context, *jrpc2.Request) (any, error)
 //
 // If fn does not have one of these forms, Check reports an error.
 //
-// Note that the JSON-RPC standard restricts encoded parameter values to arrays
-// and objects.  Check will accept argument types that do not encode to arrays
-// or objects, but the wrapper will report an error when decoding the request.
-// The recommended solution is to define a struct type for your parameters.
+// If the type of X is a struct or a pointer to a struct, the generated wrapper
+// accepts JSON parameters as either an object or an array.  The names used to
+// map array elements to struct fields are chosen by examining the fields of X
+// in order of their declaration.  Unexported fields are skipped, and the
+// parameter name for each exported field is chosen by following these rules,
+// in order:
+//
+// If the field has a `json:"-"` tag, the field is skipped.
+//
+// Otherwise, if the field has a `json:"name"` tag and the name is not empty,
+// "name" is used.
+//
+// Otherwise, if the field nas a `jrpc:"name"` tag, "name" is used.  Note: This
+// case is meant to support types with custom implementations of UnmarshalJSON.
+// Assigning a name that does not match the field name can cause json.Unmarshal
+// to report an error.
+//
+// Otherwise, if the field is anonymous (embedded) it is skipped. To include an
+// anonymous field, ensure it is tagged for one of the previous rules.
+//
+// Otherwise the name of the field is used with its first character converted
+// to lowercase.
+//
+// For other (non-struct) argument types, the accepted format is whatever the
+// json.Unmarshal function can decode into the value.  Note, however, that the
+// JSON-RPC standard restricts encoded parameter values to arrays and objects.
+// Check will accept argument types that cannot accept arrays or objects, but
+// the wrapper will report an error when decoding the request.  The recommended
+// solution is to define a struct type for your parameters.
 //
 // For a single arbitrary type, another approach is to use a 1-element array:
 //
-//   func(ctx context.Context, sp [1]string) error {
-//      s := sp[0] // pull the actual argument out of the array
-//      // ...
-//   }
+//	func(ctx context.Context, sp [1]string) error {
+//	   s := sp[0] // pull the actual argument out of the array
+//	   // ...
+//	}
 //
 // For more complex positional signatures, see also handler.Positional.
-//
-func Check(fn interface{}) (*FuncInfo, error) {
+func Check(fn any) (*FuncInfo, error) {
 	if fn == nil {
 		return nil, errors.New("nil function")
 	}
@@ -297,6 +308,11 @@ func Check(fn interface{}) (*FuncInfo, error) {
 		info.Argument = info.Type.In(1)
 	}
 
+	// Check for struct field names on the argument type.
+	if ok, names := structFieldNames(info.Argument); ok {
+		info.posNames = names
+	}
+
 	// Check return values.
 	no := info.Type.NumOut()
 	if no < 1 || no > 2 {
@@ -311,11 +327,10 @@ func Check(fn interface{}) (*FuncInfo, error) {
 	return info, nil
 }
 
-// strict is a wrapper for an arbitrary value that enforces strict field
-// checking when unmarshaling from JSON, and handles translation of array
-// format into object format.
-type strict struct {
-	v        interface{}
+// arrayStub is a wrapper for an arbitrary value that handles translation of
+// JSON arrays into a corresponding object format.
+type arrayStub struct {
+	v        any
 	posNames []string
 }
 
@@ -325,9 +340,9 @@ type strict struct {
 // If s.posNames is set and data encodes an array, the array is rewritten to an
 // equivalent object with field names assigned by the positional names.
 // Otherwise, data is returned as-is without error.
-func (s *strict) translate(data []byte) ([]byte, error) {
-	if len(s.posNames) == 0 || firstByte(data) != '[' {
-		return data, nil // no names, or not an array
+func (s *arrayStub) translate(data []byte) ([]byte, error) {
+	if firstByte(data) != '[' {
+		return data, nil // not an array
 	}
 
 	// Decode the array wrapper and verify it has the correct length.
@@ -347,12 +362,42 @@ func (s *strict) translate(data []byte) ([]byte, error) {
 	return json.Marshal(obj)
 }
 
-func (s *strict) UnmarshalJSON(data []byte) error {
+func (s *arrayStub) UnmarshalJSON(data []byte) error {
 	actual, err := s.translate(data)
 	if err != nil {
 		return err
 	}
-	dec := json.NewDecoder(bytes.NewReader(actual))
+	return json.Unmarshal(actual, s.v)
+}
+
+// strictStub is a wrapper for an arbitrary value that enforces strict field
+// checking when unmarshaling from JSON.
+type strictStub struct{ v any }
+
+func (s *strictStub) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	return dec.Decode(s.v)
+}
+
+func (fi *FuncInfo) argWrapper() func(reflect.Value) any {
+	strict := fi.strictFields && fi.Argument != nil && !fi.Argument.Implements(strictType)
+	names := fi.posNames // capture so the wrapper does not pin fi
+	array := len(names) != 0
+	switch {
+	case strict && array:
+		return func(v reflect.Value) any {
+			return &arrayStub{v: &strictStub{v: v.Interface()}, posNames: names}
+		}
+	case strict:
+		return func(v reflect.Value) any {
+			return &strictStub{v: v.Interface()}
+		}
+	case array:
+		return func(v reflect.Value) any {
+			return &arrayStub{v: v.Interface(), posNames: names}
+		}
+	default:
+		return reflect.Value.Interface
+	}
 }
