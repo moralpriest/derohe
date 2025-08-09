@@ -1729,8 +1729,8 @@ func TestXSWDServerWithPort(t *testing.T) {
 			}
 			_, serverErr, err := testXSWDCall(t, conn, request7)
 			assert.NoErrorf(t, err, "Request 7 %s should not error: %s", request7.Method, err)
-			// This errors on RPC.Call(), not request.UnmarshalParams()
-			assert.Equal(t, jrpc2.InvalidRequest, serverErr.Code, "Response 7 should be %v: %v", jrpc2.InvalidRequest, serverErr.Code)
+			// Malformed JSON returns ParseError in jrpc2 v1.3.5
+			assert.Equal(t, jrpc2.ParseError, serverErr.Code, "Response 7 should be %v: %v", jrpc2.ParseError, serverErr.Code)
 		})
 	})
 }
