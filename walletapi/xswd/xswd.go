@@ -710,7 +710,7 @@ func (x *XSWD) handleMessage(app *ApplicationData, request *jrpc2.Request) inter
 		wallet_context := *x.context
 		wallet_context.Extra["app_data"] = app
 		ctx := context.WithValue(context.Background(), "wallet_context", &wallet_context)
-		response, err := handler.Handle(ctx, request)
+		response, err := handler(ctx, request)
 		if err != nil {
 			return ResponseWithError(request, jrpc2.Errorf(code.InternalError, "Error while handling request method %q: %v", methodName, err))
 		}
@@ -809,7 +809,17 @@ func (x *XSWD) readMessageFromSession(conn *Connection, app *ApplicationData) {
 			continue
 		}
 
-		x.requests <- messageRequest{app: app, request: request, conn: conn}
+		// Convert ParsedRequest to Request
+		req := request.ToRequest()
+		if req == nil {
+			x.logger.Error(nil, "Invalid request")
+			if err := conn.Send(ResponseWithError(nil, jrpc2.Errorf(code.ParseError, "Invalid request"))); err != nil {
+				return
+			}
+			continue
+		}
+
+		x.requests <- messageRequest{app: app, request: req, conn: conn}
 	}
 }
 
