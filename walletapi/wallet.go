@@ -76,7 +76,23 @@ type Account struct {
 	// do not build entire history from 0, only maintain top history
 	TrackRecentBlocks int64 `json:"-"` // only scan top blocks, default is zero, means everything
 
-	sync.Mutex // syncronise modifications to this structure
+	// Event listeners functions registered
+	EventListeners map[rpc.EventType][]func(interface{})
+	sync.Mutex     // syncronise modifications to this structure
+}
+
+func (w *Wallet_Memory) AddListener(event rpc.EventType, callback func(interface{})) {
+	if w.account.EventListeners == nil {
+		w.account.EventListeners = map[rpc.EventType][]func(interface{}){}
+	}
+
+	var listeners []func(interface{})
+	if stored, ok := w.account.EventListeners[event]; ok {
+		listeners = stored
+	}
+
+	listeners = append(listeners, callback)
+	w.account.EventListeners[event] = listeners
 }
 
 func (w *Wallet_Memory) getEncryptedBalanceresult(scid crypto.Hash) rpc.GetEncryptedBalance_Result {
@@ -104,8 +120,6 @@ func (w *Wallet_Memory) InsertReplace(scid crypto.Hash, e rpc.Entry) {
 	var entries []rpc.Entry
 	if _, ok := w.account.EntriesNative[scid]; ok {
 		entries = w.account.EntriesNative[scid]
-	} else {
-
 	}
 
 	i := sort.Search(len(entries), func(j int) bool {
@@ -122,10 +136,30 @@ func (w *Wallet_Memory) InsertReplace(scid crypto.Hash, e rpc.Entry) {
 	}
 	entries = append(entries, e)
 
+	// Notify listeners of this new entry
+	if listeners, ok := w.account.EventListeners[rpc.NewEntry]; ok {
+		for _, listener := range listeners {
+			listener(e)
+		}
+	}
+
 	if w.account.EntriesNative == nil {
 		w.account.EntriesNative = map[crypto.Hash][]rpc.Entry{}
 	}
 	w.account.EntriesNative[scid] = entries
+}
+
+func (w *Wallet_Memory) TokenAdd(scid crypto.Hash) (err error) {
+	w.Lock()
+	defer w.Unlock()
+
+	if _, ok := w.account.EntriesNative[scid]; !ok {
+		w.account.EntriesNative[scid] = []rpc.Entry{}
+	} else {
+		return fmt.Errorf("token already added")
+	}
+
+	return nil
 }
 
 // generate keys from using random numbers
@@ -294,24 +328,40 @@ func (w *Wallet_Memory) Get_Payments_DestinationPort(scid crypto.Hash, port uint
 }
 
 // return all payments within a tx there can be only 1 entry
+// ZERO SCID will also search in all other tokens
 // NOTE: what about multiple payments
-func (w *Wallet_Memory) Get_Payments_TXID(txid string) (entry rpc.Entry) {
+func (w *Wallet_Memory) Get_Payments_TXID(scid crypto.Hash, txid string) (crypto.Hash, rpc.Entry) {
 	w.Lock()
 	defer w.Unlock()
 
-	var zerohash crypto.Hash
-	all_entries := w.account.EntriesNative[zerohash]
-	if all_entries == nil || len(all_entries) < 1 {
-		return
+	all_entries := w.account.EntriesNative[scid]
+	if (all_entries == nil || len(all_entries) < 1) && !scid.IsZero() {
+		return scid, rpc.Entry{}
 	}
 
 	for _, e := range all_entries {
 		if txid == e.TXID {
-			return e
+			return scid, e
 		}
 	}
 
-	return
+	// Its zero, maybe its optional, check in all others tokens
+	if scid.IsZero() {
+		for scid, entries := range w.account.EntriesNative {
+			// we already processed it, skip it
+			if scid.IsZero() {
+				continue
+			}
+
+			for _, e := range entries {
+				if txid == e.TXID {
+					return scid, e
+				}
+			}
+		}
+	}
+
+	return scid, rpc.Entry{}
 }
 
 // delete most of the data and prepare for rescan
@@ -324,6 +374,11 @@ func (w *Wallet_Memory) Clean() {
 	for k := range w.account.EntriesNative {
 		delete(w.account.EntriesNative, k)
 	}
+
+	for k := range w.account.Balance {
+		delete(w.account.Balance, k)
+	}
+
 	w.account.RingMembers = map[string]int64{}
 	w.account.Balance_Result = w.account.Balance_Result[:0]
 	w.account.Registered = false

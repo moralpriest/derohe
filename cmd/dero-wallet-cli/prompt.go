@@ -16,27 +16,29 @@
 
 package main
 
-import "os"
-import "io"
-import "fmt"
-import "bytes"
-import "time"
+import (
+	"bytes"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/chzyer/readline"
+	"github.com/creachadair/jrpc2"
+	"github.com/deroproject/derohe/config"
+	"github.com/deroproject/derohe/cryptography/crypto"
+	"github.com/deroproject/derohe/globals"
+	"github.com/deroproject/derohe/rpc"
+	"github.com/deroproject/derohe/walletapi"
+	"github.com/deroproject/derohe/walletapi/xswd"
+)
 
 //import "io/ioutil"
 //import "path/filepath"
-import "strings"
-import "unicode"
-import "strconv"
-import "encoding/hex"
-
-import "github.com/chzyer/readline"
-
-import "github.com/deroproject/derohe/rpc"
-import "github.com/deroproject/derohe/config"
-import "github.com/deroproject/derohe/globals"
-import "github.com/deroproject/derohe/walletapi"
-
-import "github.com/deroproject/derohe/cryptography/crypto"
 
 var account walletapi.Account
 
@@ -91,7 +93,7 @@ func handle_prompt_command(l *readline.Instance, line string) {
 		fallthrough
 	case "balance": // give user his balance
 		balance_unlocked, locked_balance := wallet.Get_Balance_Rescan()
-		fmt.Fprintf(l.Stderr(), "DERO Balance    : "+color_green+"%s"+color_white+"\n", globals.FormatMoney(locked_balance+balance_unlocked))
+		fmt.Fprintf(l.Stderr(), "DERO Balance: "+color_green+"%s"+color_white+"\n", globals.FormatMoney(locked_balance+balance_unlocked))
 
 		line_parts := line_parts[1:] // remove first part
 
@@ -110,12 +112,30 @@ func handle_prompt_command(l *readline.Instance, line string) {
 			if err != nil {
 				logger.Error(err, "error during Sc balance", "scid", scid.String())
 			} else {
-				fmt.Fprintf(l.Stderr(), "SCID %s Balance    : "+color_green+"%s"+color_white+"\n\n", line_parts[0], globals.FormatMoney(balance))
+				fmt.Fprintf(l.Stderr(), "SCID %s Balance: "+color_green+"%s"+color_white+"\n\n", line_parts[0], globals.FormatMoney(balance))
 			}
 
 		case 2: // scid balance at topoheight
 			logger.Error(err, "not implemented")
 			break
+		}
+
+	case "token_add":
+		line_parts := line_parts[1:] // remove first part
+
+		switch len(line_parts) {
+		case 0:
+			break
+		case 1:
+			scid := crypto.HashHexToHash(line_parts[0])
+			if err := wallet.TokenAdd(scid); err != nil {
+				logger.Error(err, "Token")
+			} else {
+				wallet.Save_Wallet()
+				fmt.Fprintf(l.Stderr(), "SCID "+color_green+"%s"+color_white+" added\n\n", scid.String())
+			}
+		default:
+			logger.Error(err, "not implemented")
 		}
 
 	case "rescan_bc", "rescan_spent": // rescan from 0
@@ -406,7 +426,7 @@ func handle_prompt_command(l *readline.Instance, line string) {
 	case "": // blank enter key just loop
 	default:
 		//fmt.Fprintf(l.Stderr(), "you said: %s", strconv.Quote(line))
-		logger.Error(err, "No such command")
+		logger.Error(err, "No such command", "command", command)
 	}
 
 }
@@ -555,7 +575,6 @@ func ReadSCID(l *readline.Instance) (a crypto.Hash, err error) {
 			l.SetPrompt(fmt.Sprintf("%sEnter SCID: ", color))
 		} else {
 			l.SetPrompt(fmt.Sprintf("%sEnter SCID: ", color))
-
 		}
 
 		l.Refresh()
@@ -782,6 +801,102 @@ func ConfirmYesNoDefaultNo(l *readline.Instance, prompt_temporary string) bool {
 	return false
 }
 
+func ReadStringXSWDPrompt(l *readline.Instance, onClose chan bool, prompt string, values []string) (a string) {
+	prompt_mutex.Lock()
+
+	conf := l.GenPasswordConfig()
+	conf.EnableMask = false
+
+	conf.SetListener(func(line []rune, pos int, key rune) (newLine []rune, newPos int, ok bool) {
+		color := color_green
+
+		found := false
+		for _, v := range values {
+			if v == strings.ToUpper(string(line)) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			color = color_red
+		}
+
+		l.SetPrompt(fmt.Sprintf("%sXSWD: %s", color, prompt))
+		l.Refresh()
+
+		return nil, 0, false
+	})
+
+	defer func() {
+		l.SetPrompt(color_normal)
+		l.Refresh()
+		prompt_mutex.Unlock()
+	}()
+
+	l.Operation.KickReader()
+
+	input := make(chan string)
+	validValue := false
+	for !validValue {
+		go func() {
+			line, err := l.ReadPasswordWithConfig(conf)
+			if err == readline.ErrInterrupt {
+				if len(line) == 0 {
+					logger.Info("Ctrl-C received, Exiting")
+					os.Exit(0)
+				}
+			} else if err == io.EOF {
+				os.Exit(0)
+			} else if err != nil {
+				logger.Error(err, "Error reading input")
+			}
+			value := strings.ToUpper(string(line))
+			input <- value
+		}()
+
+		select {
+		case <-onClose:
+			l.Operation.KickReader()
+			return ""
+		case a = <-input:
+		}
+
+		for _, v := range values {
+			if v == a {
+				validValue = true
+				break
+			}
+		}
+	}
+	return
+}
+
+// Ask permission for request
+func AskPermissionForRequest(l *readline.Instance, app *xswd.ApplicationData, request *jrpc2.Request) xswd.Permission {
+	method := request.Method()
+	param := strings.ReplaceAll(strings.Join(strings.Fields(request.ParamString()), " "), "\n", " ")
+
+	values := []string{"A", "D", "AA", "AD"}
+	prompt := fmt.Sprintf("Request from %s: %s | Params: %s | Do you want to allow this request ? ([A]llow / [D]eny / [AA] Always Allow / [AD] Always Deny): ", app.Name, method, param)
+	if !xswd_server.CanStorePermission(method) {
+		values = []string{"A", "D", "AD"}
+		prompt = fmt.Sprintf("Request from %s: %s | Params: %s | Do you want to allow this request ? ([A]llow / [D]eny / [AD] Always Deny): ", app.Name, method, param)
+	}
+
+	line := ReadStringXSWDPrompt(l, app.OnClose, prompt, values)
+
+	if strings.ToUpper(strings.TrimSpace(line)) == "A" {
+		return xswd.Allow
+	} else if strings.ToUpper(strings.TrimSpace(line)) == "AA" {
+		return xswd.AlwaysAllow
+	} else if strings.ToUpper(strings.TrimSpace(line)) == "AD" {
+		return xswd.AlwaysDeny
+	}
+
+	return xswd.Deny
+}
+
 // confirms whether user knows the current password for the wallet
 // this is triggerred while transferring  amount, changing settings and so on
 func ValidateCurrentPassword(l *readline.Instance, wallet *walletapi.Wallet_Disk) bool {
@@ -902,6 +1017,7 @@ var completer = readline.NewPrefixCompleter(
 	readline.PcItem("help"),
 	readline.PcItem("address"),
 	readline.PcItem("balance"),
+	readline.PcItem("token_add"),
 	readline.PcItem("integrated_address"),
 	readline.PcItem("get_tx_key"),
 	readline.PcItem("filesign"),
@@ -936,6 +1052,7 @@ func usage(w io.Writer) {
 	io.WriteString(w, "\t\033[1mhelp\033[0m\t\tthis help\n")
 	io.WriteString(w, "\t\033[1maddress\033[0m\t\tDisplay user address\n")
 	io.WriteString(w, "\t\033[1mbalance\033[0m\t\tDisplay user balance\n")
+	io.WriteString(w, "\t\033[1mtoken_add\033[0m\t\tAdd token\n")
 	io.WriteString(w, "\t\033[1mintegrated_address\033[0m\tDisplay random integrated address (with encrypted payment ID)\n")
 	io.WriteString(w, "\t\033[1mmenu\033[0m\t\tEnable menu mode\n")
 	io.WriteString(w, "\t\033[1mrescan_bc\033[0m\tRescan blockchain to re-obtain transaction history \n")

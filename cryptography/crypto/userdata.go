@@ -16,11 +16,14 @@
 
 package crypto
 
-import "math/big"
-import "golang.org/x/crypto/chacha20"
-import "github.com/deroproject/derohe/cryptography/bn256"
+import (
+	"math/big"
 
-import "github.com/go-logr/logr"
+	"github.com/deroproject/derohe/cryptography/bn256"
+	"github.com/go-logr/logr"
+	"golang.org/x/crypto/chacha20"
+	"golang.org/x/crypto/sha3"
+)
 
 var Logger logr.Logger = logr.Discard() // default discard all logs, someone needs to set this up
 
@@ -51,6 +54,19 @@ func GenerateSharedSecret(secret *big.Int, peer_publickey *bn256.G1) (shared_key
 	}
 
 	shared_key = Keccak256(compressed[:])
+
+	return
+}
+
+// Use SHAKE256 as a KDF
+func ShakeXOF(prefix string, parts ...[]byte) (result []byte) {
+	hash := sha3.NewShake256()
+	hash.Write([]byte(prefix))
+	for _, p := range parts {
+		hash.Write(p)
+	}
+	result = make([]byte, 32)
+	hash.Read(result)
 
 	return
 }
