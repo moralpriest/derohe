@@ -21,14 +21,14 @@ func (s *Server) CancelRequest(id string) {
 }
 
 // methodFunc is a replication of handler.Func redeclared to avert a cycle.
-type methodFunc func(context.Context, *Request) (any, error)
+type methodFunc func(context.Context, *Request) (interface{}, error)
 
-func (m methodFunc) Handle(ctx context.Context, req *Request) (any, error) {
+func (m methodFunc) Handle(ctx context.Context, req *Request) (interface{}, error) {
 	return m(ctx, req)
 }
 
 // Handle the special rpc.serverInfo method, that requests server vitals.
-func (s *Server) handleRPCServerInfo(context.Context, *Request) (any, error) {
+func (s *Server) handleRPCServerInfo(context.Context, *Request) (interface{}, error) {
 	return s.ServerInfo(), nil
 }
 

@@ -22,16 +22,17 @@ import (
 //
 // Usage example:
 //
-//	func Handler(ctx context.Context, req *jrpc2.Request) (any, error) {
-//	   var x, y int
-//	   var s string
+//    func Handler(ctx context.Context, req *jrpc2.Request) (interface{}, error) {
+//       var x, y int
+//       var s string
 //
-//	   if err := req.UnmarshalParams(&handler.Args{&x, &y, &s}); err != nil {
-//	      return nil, err
-//	   }
-//	   // do useful work with x, y, and s
-//	}
-type Args []any
+//       if err := req.UnmarshalParams(&handler.Args{&x, &y, &s}); err != nil {
+//          return nil, err
+//       }
+//       // do useful work with x, y, and s
+//    }
+//
+type Args []interface{}
 
 // UnmarshalJSON supports JSON unmarshaling for a.
 func (a Args) UnmarshalJSON(data []byte) error {
@@ -56,7 +57,7 @@ func (a Args) MarshalJSON() ([]byte, error) {
 	if len(a) == 0 {
 		return []byte(`[]`), nil
 	}
-	return json.Marshal([]any(a))
+	return json.Marshal([]interface{}(a))
 }
 
 // Obj is a wrapper that maps object fields into concrete locations.
@@ -66,7 +67,7 @@ func (a Args) MarshalJSON() ([]byte, error) {
 // succeeds. If k does not exist in v, it is ignored.
 //
 // Marshaling an Obj into JSON works as for an ordinary map.
-type Obj map[string]any
+type Obj map[string]interface{}
 
 // UnmarshalJSON supports JSON unmarshaling into o.
 func (o Obj) UnmarshalJSON(data []byte) error {

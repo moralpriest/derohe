@@ -33,10 +33,7 @@ const percentBangString = "%!"
 // It is invalid to include more than one %w verb or to supply it with an
 // operand that does not implement the error interface. The %w verb is otherwise
 // a synonym for %v.
-//
-// Note that as of Go 1.13, the fmt.Errorf function will do error formatting,
-// but it will not capture a stack backtrace.
-func Errorf(format string, a ...any) error {
+func Errorf(format string, a ...interface{}) error {
 	format = formatPlusW(format)
 	// Support a ": %[wsv]" suffix, which works well with xerrors.Formatter.
 	wrap := strings.HasSuffix(format, ": %w")
@@ -81,7 +78,7 @@ func Errorf(format string, a ...any) error {
 	return &wrapError{msg, err, frame}
 }
 
-func errorAt(args []any, i int) error {
+func errorAt(args []interface{}, i int) error {
 	if i < 0 || i >= len(args) {
 		return nil
 	}

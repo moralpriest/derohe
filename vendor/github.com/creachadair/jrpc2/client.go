@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"sync"
@@ -19,7 +20,8 @@ import (
 type Client struct {
 	done *sync.WaitGroup // done when the reader is finished at shutdown time
 
-	log   func(string, ...any) // write debug logs here
+	log   func(string, ...interface{}) // write debug logs here
+	enctx encoder
 	snote func(*jmessage)
 	scall func(context.Context, *jmessage) []byte
 	chook func(*Client, *Response)
@@ -40,6 +42,7 @@ func NewClient(ch channel.Channel, opts *ClientOptions) *Client {
 	c := &Client{
 		done:  new(sync.WaitGroup),
 		log:   opts.logFunc(),
+		enctx: opts.encodeContext(),
 		snote: opts.handleNotification(),
 		scall: opts.handleCallback(),
 		chook: opts.handleCancel(),
@@ -147,18 +150,22 @@ func (c *Client) deliver(rsp *jmessage) {
 	}
 
 	id := string(fixID(rsp.ID))
-	p := c.pending[id]
-	if p == nil {
+	if p := c.pending[id]; p == nil {
 		c.log("Discarding response for unknown ID %q", id)
-		return
-	}
-	// Remove the pending request from the set and deliver its response.
-	// Determining whether it's an error is the caller's responsibility.
-	delete(c.pending, id)
-	if rsp.err != nil {
-		p.ch <- &jmessage{ID: rsp.ID, E: rsp.err}
+	} else if !c.versionOK(rsp.V) {
+		delete(c.pending, id)
+		p.ch <- &jmessage{
+			ID: rsp.ID,
+			E: &Error{
+				Code:    code.InvalidRequest,
+				Message: fmt.Sprintf("incorrect version marker %q", rsp.V),
+			},
+		}
 		c.log("Invalid response for ID %q", id)
 	} else {
+		// Remove the pending request from the set and deliver its response.
+		// Determining whether it's an error is the caller's responsibility.
+		delete(c.pending, id)
 		p.ch <- rsp
 		c.log("Completed request for ID %q", id)
 	}
@@ -166,7 +173,7 @@ func (c *Client) deliver(rsp *jmessage) {
 
 // req constructs a fresh request for the specified method and parameters.
 // This does not transmit the request to the server; use c.send to do so.
-func (c *Client) req(ctx context.Context, method string, params any) (*jmessage, error) {
+func (c *Client) req(ctx context.Context, method string, params interface{}) (*jmessage, error) {
 	bits, err := c.marshalParams(ctx, method, params)
 	if err != nil {
 		return nil, err
@@ -184,7 +191,7 @@ func (c *Client) req(ctx context.Context, method string, params any) (*jmessage,
 }
 
 // note constructs a notification request for the specified method and parameters.
-func (c *Client) note(ctx context.Context, method string, params any) (*jmessage, error) {
+func (c *Client) note(ctx context.Context, method string, params interface{}) (*jmessage, error) {
 	bits, err := c.marshalParams(ctx, method, params)
 	if err != nil {
 		return nil, err
@@ -290,14 +297,15 @@ func (c *Client) waitComplete(pctx context.Context, id string, p *Response) {
 // A successful call reports a nil error and a non-nil response. Errors from
 // the server have concrete type *jrpc2.Error.
 //
-//	rsp, err := c.Call(ctx, method, params)
-//	if e, ok := err.(*jrpc2.Error); ok {
-//	   log.Fatalf("Error from server: %v", err)
-//	} else if err != nil {
-//	   log.Fatalf("Call failed: %v", err)
-//	}
-//	handleValidResponse(rsp)
-func (c *Client) Call(ctx context.Context, method string, params any) (*Response, error) {
+//    rsp, err := c.Call(ctx, method, params)
+//    if e, ok := err.(*jrpc2.Error); ok {
+//       log.Fatalf("Error from server: %v", err)
+//    } else if err != nil {
+//       log.Fatalf("Call failed: %v", err)
+//    }
+//    handleValidResponse(rsp)
+//
+func (c *Client) Call(ctx context.Context, method string, params interface{}) (*Response, error) {
 	req, err := c.req(ctx, method, params)
 	if err != nil {
 		return nil, err
@@ -316,7 +324,7 @@ func (c *Client) Call(ctx context.Context, method string, params any) (*Response
 // CallResult invokes Call with the given method and params. If it succeeds,
 // the result is decoded into result. This is a convenient shorthand for Call
 // followed by UnmarshalResult. It will panic if result == nil.
-func (c *Client) CallResult(ctx context.Context, method string, params, result any) error {
+func (c *Client) CallResult(ctx context.Context, method string, params, result interface{}) error {
 	rsp, err := c.Call(ctx, method, params)
 	if err != nil {
 		return err
@@ -360,13 +368,13 @@ func (c *Client) Batch(ctx context.Context, specs []Spec) ([]*Response, error) {
 // the Notify field is true, the request is sent as a notification.
 type Spec struct {
 	Method string
-	Params any
+	Params interface{}
 	Notify bool
 }
 
 // Notify transmits a notification to the specified method and parameters.  It
 // blocks until the notification has been sent.
-func (c *Client) Notify(ctx context.Context, method string, params any) error {
+func (c *Client) Notify(ctx context.Context, method string, params interface{}) error {
 	req, err := c.note(ctx, method, params)
 	if err != nil {
 		return err
@@ -414,11 +422,13 @@ func (c *Client) stop(err error) {
 	c.ch = nil
 }
 
+func (c *Client) versionOK(v string) bool { return v == Version }
+
 // marshalParams validates and marshals params to JSON for a request.  The
 // value of params must be either nil or encodable as a JSON object or array.
-func (c *Client) marshalParams(ctx context.Context, method string, params any) (json.RawMessage, error) {
+func (c *Client) marshalParams(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
 	if params == nil {
-		return nil, nil // no parameters, that is OK
+		return c.enctx(ctx, method, nil) // no parameters, that is OK
 	}
 	pbits, err := json.Marshal(params)
 	if err != nil {
@@ -429,7 +439,11 @@ func (c *Client) marshalParams(ctx context.Context, method string, params any) (
 		// an array or an object.
 		return nil, &Error{Code: code.InvalidRequest, Message: "invalid parameters: array or object required"}
 	}
-	return pbits, nil
+	bits, err := c.enctx(ctx, method, pbits)
+	if err != nil {
+		return nil, err
+	}
+	return bits, err
 }
 
 func newPending(ctx context.Context, id string) (context.Context, *Response) {
