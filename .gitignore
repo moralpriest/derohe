@@ -1,0 +1,127 @@
+# Go binaries and build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.wasm
+*.test
+*.out
+
+# Go workspace
+go.work
+
+# Dependency directories (commented out - this project uses vendor)
+# vendor/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Linux
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Windows
+ehthumbs.db
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Logs and runtime data
+*.log
+logs/
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+*.lcov
+
+# Temporary folders
+tmp/
+temp/
+/tmp/
+/var/tmp/
+
+# Docker
+.dockerignore
+Dockerfile.dev
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Local development
+.local/
+local/
+
+# Build artifacts
+build/
+bin/
+out/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup and archive files
+*.bak
+*.backup
+*.old
+*.tar.gz
+*.zip
+*.rar
+
+# Certificate files
+*.pem
+*.key
+*.crt
+*.csr
+
+# Environment and config files
+.env
+.env.test
+.env.local
+.env.production
+config.local.*
+settings.local.*
+
+# DERO specific files
+cmd/derod/derod
+/derod
+*.dero-wallet-cli
+*.dero-wallet-rpc
+*.wallet
