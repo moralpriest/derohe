@@ -28,11 +28,15 @@ import (
 	"time"
 
 	"github.com/chzyer/readline"
+	"github.com/creachadair/jrpc2"
 	"github.com/deroproject/derohe/cryptography/crypto"
 	"github.com/deroproject/derohe/globals"
 	"github.com/deroproject/derohe/rpc"
 	"github.com/deroproject/derohe/transaction"
+	"github.com/deroproject/derohe/walletapi/xswd"
 )
+
+var xswd_server *xswd.XSWD
 
 //import "github.com/deroproject/derohe/address"
 
@@ -64,6 +68,12 @@ func display_easymenu_post_open_command(l *readline.Instance) {
 		io.WriteString(w, "\t\033[1m13\033[0m\tShow transaction history\n")
 		io.WriteString(w, "\t\033[1m14\033[0m\tRescan transaction history\n")
 		io.WriteString(w, "\t\033[1m15\033[0m\tExport all transaction history in json format\n")
+		if xswd_server == nil {
+			io.WriteString(w, "\t\033[1m16\033[0m\tStart XSWD Server\n")
+		} else {
+			io.WriteString(w, "\t\033[1m16\033[0m\tStop XSWD Server\n")
+			io.WriteString(w, "\t\033[1m17\033[0m\tList XSWD Applications\n")
+		}
 	}
 
 	io.WriteString(w, "\n\t\033[1m9\033[0m\tExit menu and start prompt\n")
@@ -495,6 +505,42 @@ func handle_easymenu_post_open_command(l *readline.Instance, line string) (proce
 				logger.Error(err, "Error exporting data")
 			} else {
 				logger.Info("successfully exported history", "file", filename)
+			}
+		}
+	case "16": // start/stop xswd server
+		if xswd_server != nil {
+			xswd_server.Stop()
+			xswd_server = nil
+			break
+		}
+
+		// NewXSWDServer default behavior is to Ask permission for all requests
+		xswd_server = xswd.NewXSWDServer(wallet, func(ad *xswd.ApplicationData) bool {
+			// xswd logger informs if app is requesting permissions upon connection or if app is already connected
+			return ReadStringXSWDPrompt(l, ad.OnClose, fmt.Sprintf("Allow application %s (%s) to access your wallet (y/N): ", ad.Name, ad.Url), []string{"Y", "N"}) == "Y"
+		}, func(ad *xswd.ApplicationData, r *jrpc2.Request) xswd.Permission {
+			return AskPermissionForRequest(l, ad, r)
+		})
+		// check if start was successful
+		time.Sleep(time.Second)
+		if !xswd_server.IsRunning() {
+			xswd_server = nil
+		}
+	case "17":
+		if xswd_server == nil {
+			logger.Error(nil, "XSWD server is not running")
+			break
+		}
+		apps := xswd_server.GetApplications()
+		logger.Info(fmt.Sprintf("XSWD Applications (%d):", len(apps)))
+		for _, app := range apps {
+			logger.Info("Application", "id", app.Id, "name", app.Name, "description", app.Description, "url", app.Url)
+			for name, perm := range app.Permissions {
+				logger.Info(fmt.Sprintf("Permission %s", app.Name), name, perm)
+			}
+
+			for event, sub := range app.RegisteredEvents {
+				logger.Info(fmt.Sprintf("Subscribed %s", app.Name), string(event), sub)
 			}
 		}
 

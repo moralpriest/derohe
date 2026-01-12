@@ -16,15 +16,17 @@
 
 package proof
 
-import "fmt"
-import "math/big"
-import "strings"
-import "encoding/hex"
+import (
+	"encoding/hex"
+	"fmt"
+	"math/big"
+	"strings"
 
-import "github.com/deroproject/derohe/cryptography/crypto"
-import "github.com/deroproject/derohe/rpc"
-import "github.com/deroproject/derohe/cryptography/bn256"
-import "github.com/deroproject/derohe/transaction"
+	"github.com/deroproject/derohe/cryptography/bn256"
+	"github.com/deroproject/derohe/cryptography/crypto"
+	"github.com/deroproject/derohe/rpc"
+	"github.com/deroproject/derohe/transaction"
+)
 
 //import "github.com/deroproject/derosuite/walletapi" // to decode encrypted payment ID
 
@@ -98,13 +100,20 @@ func Prove(proof string, input_tx string, ring_string [][]string, mainnet bool) 
 				receivers = append(receivers, astring.String())
 				amounts = append(amounts, amount)
 
-				//crypto.EncryptDecryptUserData(addr.PublicKey.G1(), tx.Payloads[t].RPCPayload)
-				crypto.EncryptDecryptUserData(crypto.Keccak256(shared_key[:], tx.Payloads[t].Statement.Publickeylist[k].EncodeCompressed()), tx.Payloads[t].RPCPayload)
+				payload := tx.Payloads[t].RPCPayload
+				switch tx.Payloads[t].RPCType {
+				case transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR:
+					crypto.EncryptDecryptUserData(crypto.Keccak256(shared_key[:], tx.Payloads[t].Statement.Publickeylist[k].EncodeCompressed()), payload)
+				case transaction.ENCRYPTED_DEFAULT_PAYLOAD_CBOR_V2:
+					payload = payload[33:]
+					crypto.EncryptDecryptUserData(crypto.Keccak256(shared_key[:], tx.Payloads[t].Statement.Publickeylist[k].EncodeCompressed()), payload)
+				}
+
 				// skip first byte as it is not guaranteed, even rest of the bytes are not
 
-				payload_raw = append(payload_raw, tx.Payloads[t].RPCPayload[1:])
+				payload_raw = append(payload_raw, payload[1:])
 				var args rpc.Arguments
-				if err := args.UnmarshalBinary(tx.Payloads[t].RPCPayload[1:]); err == nil {
+				if err := args.UnmarshalBinary(payload[1:]); err == nil {
 					payload_decoded = append(payload_decoded, fmt.Sprintf("%s", args))
 				} else {
 					payload_decoded = append(payload_decoded, err.Error())
