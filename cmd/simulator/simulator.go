@@ -163,7 +163,7 @@ func main() {
 		MaxBackups: 2,
 	})
 
-	logger = globals.Logger.WithName("derod")
+	logger = globals.Logger.WithName("simulator")
 
 	logger.Info("DERO HE Simulator :  It is an alpha version, use it for testing/evaluations purpose only.")
 	logger.Info("Copyright 2017-2021 DERO Project. All rights reserved.")
@@ -200,6 +200,15 @@ func main() {
 
 	register_wallets(chain)                               // setup 22 wallets
 	Mine_block_single(chain, genesis_wallet.GetAddress()) //mine single block to confirm all 22 registrations
+
+	// Display genesis wallet information
+	logger.Info("GENESIS WALLET")
+	logger.Info("Address:  " + genesis_wallet.GetAddress().String())
+	logger.Info("Seed:     " + genesis_seed)
+	logger.Info("Status:   Active with ~1.12 DERO")
+	logger.Info("")
+	logger.Info("To restore any wallet:")
+	logger.Info("dero-wallet-cli --daemon-address=localhost:20000 --restore-deterministic-wallet --electrum-seed=<SEED>")
 
 	go walletapi.Keep_Connectivity() // all wallets maintain connectivity
 
