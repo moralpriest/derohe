@@ -202,11 +202,9 @@ func main() {
 	Mine_block_single(chain, genesis_wallet.GetAddress()) //mine single block to confirm all 22 registrations
 
 	// Display genesis wallet information
-	logger.Info("GENESIS WALLET")
-	logger.Info("Address:  " + genesis_wallet.GetAddress().String())
-	logger.Info("Seed:     " + genesis_seed)
-	logger.Info("Status:   Active with ~1.12 DERO")
-	logger.Info("")
+	logger.Info("genesis wallet", "address", genesis_wallet.GetAddress().String())
+	logger.Info("genesis wallet", "seed", genesis_seed)
+	logger.Info("genesis wallet", "balance", "~1.12 Dero")
 	logger.Info("To restore any wallet:")
 	logger.Info("dero-wallet-cli --daemon-address=localhost:20000 --restore-deterministic-wallet --electrum-seed=<SEED>")
 
