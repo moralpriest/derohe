@@ -182,8 +182,8 @@ func (chain *Blockchain) process_transaction(changed map[crypto.Hash]*graviton.T
 
 		zerobalance := crypto.ConstructElGamal(acckey.G1(), crypto.ElGamal_BASE_G)
 
-		if !globals.IsMainnet() { // give testnet users a dummy amount to play
-			zerobalance = zerobalance.Plus(new(big.Int).SetUint64(800000)) // add fix amount to every wallet to users balance for more testing
+		if !globals.IsMainnet() || chain.simulator { // give testnet users a dummy amount to play
+			zerobalance = zerobalance.Plus(new(big.Int).SetUint64(100000000)) // add fix amount to every wallet to users balance for more testing
 		}
 
 		// give new wallets generated in initial month a balance
