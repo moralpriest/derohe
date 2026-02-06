@@ -390,9 +390,12 @@ func (connection *Connection) process_object_response(response Objects, sent int
 		}
 		
 		// too old TXs will be ignored for mining, but we should check incoming TX here to avoid high system load
-		if uint64(chain.Get_Height()) > tx.Height+blockchain.TX_VALIDITY_HEIGHT {
-			connection.logger.V(2).Error(err, "Incoming TX is too far in the past", "txid", tx.GetHash().String())
-			continue
+		// exclude registration txs from this check as they provide no height
+		if tx.TransactionType != transaction.REGISTRATION {
+			if uint64(chain.Get_Height()) > tx.Height+blockchain.TX_VALIDITY_HEIGHT {
+				connection.logger.V(2).Error(err, "Incoming TX is too far in the past", "txid", tx.GetHash().String())
+				continue
+			}
 		}
 
 		if !chain.Mempool.Mempool_TX_Exist(tx.GetHash()) { // we still donot have it, so try to process it
