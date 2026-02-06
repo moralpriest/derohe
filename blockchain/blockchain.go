@@ -531,12 +531,12 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 	}
 
 	// verify that the clock is not being run in reverse
-	// the block timestamp cannot be less than any of the parents
+	// the block timestamp cannot be less than or equal to any of its parents' timestamp
 	for i := range bl.Tips {
-		if chain.Load_Block_Timestamp(bl.Tips[i]) > bl.Timestamp {
+		if chain.Load_Block_Timestamp(bl.Tips[i]) >= bl.Timestamp {
 			//fmt.Printf("timestamp prev %d  cur timestamp %d\n", chain.Load_Block_Timestamp(bl.Tips[i]), bl.Timestamp)
 
-			block_logger.Error(fmt.Errorf("Block timestamp is  less than its parent."), "rejecting block")
+			block_logger.Error(fmt.Errorf("Block timestamp is less than or equal to its parent."), "rejecting block")
 			return errormsg.ErrInvalidTimestamp, false
 		}
 	}
