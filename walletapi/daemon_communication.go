@@ -271,7 +271,7 @@ func (w *Wallet_Memory) Sync_Wallet_Memory_With_Daemon_internal(scid crypto.Hash
 
 			//fmt.Printf("data '%s' previous '%s' scid %s\n", w.account.Balance_Result[scid].Data, previous, scid)
 			if w.getEncryptedBalanceresult(scid).Data != previous {
-				b := w.DecodeEncryptedBalanceNow(e) // try to decode balance
+				b := w.DecodeEncryptedBalance_Memory(e, w.account.Balance[scid]) // try to decode balance
 
 				// Call all listeners registered
 				// TODO scid
