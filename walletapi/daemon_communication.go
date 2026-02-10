@@ -592,19 +592,17 @@ func (w *Wallet_Memory) SyncHistory(scid crypto.Hash) (balance uint64) {
 		if entries[i].BlockHash != result.Block_Header.Hash {
 			logger.Info("syncing loop header mismatch ", "i", i, "block_hash", entries[i].BlockHash)
 			skip := 1
-			if i >= 1 && last_topo_height == entries[i-1].TopoHeight { // skipping any entries withing same block
-				for ; i >= 1; i-- {
-					if last_topo_height == entries[i-1].TopoHeight {
-						skip++
-					} else {
-						break
-					}
+			for ; i > 0; i-- { // skipping any entries within same block
+				if last_topo_height == entries[i-1].TopoHeight {
+					skip++
+				} else {
+					break
 				}
 			}
-			entries = entries[:i-skip]
+			entries = entries[:i]
+			i--
 			w.account.EntriesNative[scid] = entries
 			logger.Info("syncing loop skipped ", "i", i, "skip", skip)
-			continue
 		}
 
 		if i <= 0 {
