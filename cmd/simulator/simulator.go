@@ -47,10 +47,10 @@ import (
 
 	//import "golang.org/x/crypto/sha3"
 
-	//import "github.com/deroproject/derohe/transaction"
 	derodrpc "github.com/deroproject/derohe/cmd/derod/rpc"
 	"github.com/deroproject/derohe/cmd/explorer/explorerlib"
 	"github.com/deroproject/derohe/cryptography/crypto"
+	"github.com/deroproject/derohe/transaction"
 	"github.com/deroproject/derohe/walletapi"
 )
 
@@ -555,6 +555,41 @@ func main() {
 
 				fmt.Printf("TopoHeight: %d Height: %d Timestamp: %d Difficulty: %s\n", i, chain.Load_Height_for_BL_ID(currentBlockID), timestamp, diff.String())
 				fmt.Printf("BlockID: %s BalanceTree: %s\n", currentBlockID, balanceHash)
+			}
+
+		case command == "print_tx":
+			if len(line_parts) == 2 && len(line_parts[1]) == 64 {
+				txid, err := hex.DecodeString(strings.ToLower(line_parts[1]))
+				if err != nil {
+					fmt.Printf("err while decoding txid err %s\n", err)
+					continue
+				}
+
+				var hash crypto.Hash
+				copy(hash[:32], []byte(txid))
+
+				var tx transaction.Transaction
+				if txBytes, err := chain.Store.Block_tx_store.ReadTX(hash); err != nil {
+					fmt.Printf("err while reading txid err %s\n", err)
+					continue
+				} else if err = tx.Deserialize(txBytes); err != nil {
+					fmt.Printf("err deserializing tx err %s\n", err)
+					continue
+				}
+
+				if validBLID, invalid, valid := chain.IS_TX_Valid(hash); valid {
+					fmt.Printf("TX is valid in block %s\n", validBLID)
+				} else if len(invalid) == 0 {
+					fmt.Printf("TX is mined in a side chain\n")
+				} else {
+					fmt.Printf("TX is mined in blocks %+v\n", invalid)
+				}
+
+				if tx.IsRegistration() {
+					fmt.Printf("Registration TX validity could not be detected\n")
+				}
+			} else {
+				fmt.Printf("print_tx needs a single transaction id as argument\n")
 			}
 
 		case strings.ToLower(line) == "status":
