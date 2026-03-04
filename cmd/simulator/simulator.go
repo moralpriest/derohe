@@ -592,6 +592,53 @@ func main() {
 				fmt.Printf("print_tx needs a single transaction id as argument\n")
 			}
 
+		case command == "peer_list":
+			p2p.PeerList_Print()
+
+		case command == "sync_info":
+			p2p.Connection_Print()
+
+		case command == "start_mining":
+			fmt.Printf("start_mining is not supported in simulator (auto-mining is managed internally)\n")
+
+		case command == "stop_mining":
+			fmt.Printf("stop_mining is not supported in simulator (use --noautomine to disable)\n")
+
+		case command == "ban":
+			if len(line_parts) >= 4 || len(line_parts) == 1 {
+				fmt.Printf("IP address required to ban\n")
+				break
+			}
+
+			if len(line_parts) == 3 {
+				if s, err := strconv.ParseInt(line_parts[2], 10, 64); err == nil && s >= 0 {
+					_ = p2p.Ban_Address(line_parts[1], uint64(s))
+					break
+				} else {
+					fmt.Printf("err parsing ban time (only positive number) %s\n", err)
+					break
+				}
+			}
+
+			if err := p2p.Ban_Address(line_parts[1], 10*60); err != nil {
+				fmt.Printf("err parsing address %s\n", err)
+			}
+
+		case command == "unban":
+			if len(line_parts) >= 3 || len(line_parts) == 1 {
+				fmt.Printf("IP address required to unban\n")
+				break
+			}
+
+			if err := p2p.UnBan_Address(line_parts[1]); err != nil {
+				fmt.Printf("err unbanning %s, err = %s\n", line_parts[1], err)
+			} else {
+				fmt.Printf("unban %s successful\n", line_parts[1])
+			}
+
+		case command == "bans":
+			p2p.BanList_Print()
+
 		case strings.ToLower(line) == "status":
 
 			// fmt.Printf("chain diff %d\n",chain.Get_Difficulty_At_Block(chain.Top_ID))
