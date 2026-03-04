@@ -343,7 +343,7 @@ func main() {
 		}
 
 		switch {
-		case line == "help":
+		case command == "help":
 			usage(l.Stderr())
 
 		case command == "profile": // writes cpu and memory profile
@@ -776,13 +776,15 @@ func usage(w io.Writer) {
 	//io.WriteString(w, completer.Tree("    "))
 	io.WriteString(w, "\t\033[1mhelp\033[0m\t\tthis help\n")
 	io.WriteString(w, "\t\033[1mdiff\033[0m\t\tShow difficulty\n")
+	io.WriteString(w, "\t\033[1mprofile\033[0m\t\tWrite cpu profile on exit\n")
 	io.WriteString(w, "\t\033[1mprint_bc\033[0m\tPrint blockchain info in a given blocks range, print_bc <begin_height> <end_height>\n")
 	io.WriteString(w, "\t\033[1mprint_block\033[0m\tPrint block, print_block <block_hash> or <block_height>\n")
+	io.WriteString(w, "\t\033[1mprint_tree\033[0m\tPrint blockchain tree (simulator placeholder)\n")
 	io.WriteString(w, "\t\033[1mprint_height\033[0m\tPrint local blockchain height\n")
 	io.WriteString(w, "\t\033[1mprint_tx\033[0m\tPrint transaction, print_tx <transaction_hash>\n")
 	io.WriteString(w, "\t\033[1mstatus\033[0m\t\tShow general information\n")
-	io.WriteString(w, "\t\033[1mstart_mining\033[0m\tStart mining <dero address> <number of threads>\n")
-	io.WriteString(w, "\t\033[1mstop_mining\033[0m\tStop daemon mining\n")
+	io.WriteString(w, "\t\033[1mstart_mining\033[0m\tStart mining (not supported in simulator)\n")
+	io.WriteString(w, "\t\033[1mstop_mining\033[0m\tStop mining (not supported in simulator)\n")
 	io.WriteString(w, "\t\033[1mpeer_list\033[0m\tPrint peer list\n")
 	io.WriteString(w, "\t\033[1msync_info\033[0m\tPrint information about connected peers and their state\n")
 	io.WriteString(w, "\t\033[1mbye\033[0m\t\tQuit the daemon\n")
@@ -791,10 +793,10 @@ func usage(w io.Writer) {
 	io.WriteString(w, "\t\033[1mbans\033[0m\t\tPrint current ban list\n")
 	io.WriteString(w, "\t\033[1mmempool_print\033[0m\t\tprint mempool contents\n")
 	io.WriteString(w, "\t\033[1mmempool_delete_tx\033[0m\t\tDelete specific tx from mempool\n")
-	io.WriteString(w, "\t\033[1mmempool_flush\033[0m\t\tFlush regpool\n")
+	io.WriteString(w, "\t\033[1mmempool_flush\033[0m\t\tFlush mempool\n")
 	io.WriteString(w, "\t\033[1mregpool_print\033[0m\t\tprint regpool contents\n")
 	io.WriteString(w, "\t\033[1mregpool_delete_tx\033[0m\t\tDelete specific tx from regpool\n")
-	io.WriteString(w, "\t\033[1mregpool_flush\033[0m\t\tFlush mempool\n")
+	io.WriteString(w, "\t\033[1mregpool_flush\033[0m\t\tFlush regpool\n")
 	io.WriteString(w, "\t\033[1mversion\033[0m\t\tShow version\n")
 	io.WriteString(w, "\t\033[1mexit\033[0m\t\tQuit the daemon\n")
 	io.WriteString(w, "\t\033[1mquit\033[0m\t\tQuit the daemon\n")
@@ -804,6 +806,19 @@ func usage(w io.Writer) {
 var completer = readline.NewPrefixCompleter(
 	readline.PcItem("help"),
 	readline.PcItem("diff"),
+	readline.PcItem("profile"),
+	readline.PcItem("print_bc"),
+	readline.PcItem("print_block"),
+	readline.PcItem("print_tree"),
+	readline.PcItem("print_height"),
+	readline.PcItem("print_tx"),
+	readline.PcItem("peer_list"),
+	readline.PcItem("sync_info"),
+	readline.PcItem("start_mining"),
+	readline.PcItem("stop_mining"),
+	readline.PcItem("ban"),
+	readline.PcItem("unban"),
+	readline.PcItem("bans"),
 
 	readline.PcItem("mempool_flush"),
 	readline.PcItem("mempool_delete_tx"),
