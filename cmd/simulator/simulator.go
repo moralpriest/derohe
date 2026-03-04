@@ -700,7 +700,7 @@ func main() {
 			time.Sleep(1 * time.Second)
 		case line == "":
 		default:
-			logger.Info(fmt.Sprintf("you said: %s", strconv.Quote(line)))
+			fmt.Printf("unknown command %s, type 'help' for available commands\n", strconv.Quote(line))
 		}
 	}
 exit:
