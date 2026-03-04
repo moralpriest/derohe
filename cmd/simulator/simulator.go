@@ -527,6 +527,17 @@ func main() {
 
 			}
 
+		case command == "diff":
+			tip := chain.Get_Top_ID()
+			fmt.Printf("Tip: %s\n", tip)
+			fmt.Printf("Height: %d\n", chain.Get_Height())
+			fmt.Printf("TopoHeight: %d\n", chain.Load_TOPO_HEIGHT())
+			fmt.Printf("difficulty: %s\n", chain.Load_Block_Difficulty(tip).String())
+
+		case command == "print_height":
+			fmt.Printf("Height: %d\n", chain.Get_Height())
+			fmt.Printf("TopoHeight: %d\n", chain.Load_TOPO_HEIGHT())
+
 		case strings.ToLower(line) == "bye":
 			fallthrough
 		case strings.ToLower(line) == "exit":
