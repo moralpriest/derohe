@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -488,6 +489,72 @@ func main() {
 				} else {
 					fmt.Printf("print_block  needs a single block id as argument\n")
 				}
+			}
+
+		case command == "print_bc":
+			fmt.Printf("printing block chain\n")
+
+			start := int64(0)
+			stop := int64(0)
+
+			if len(line_parts) != 3 {
+				fmt.Printf("print_bc requires 2 parameters: <begin_height> <end_height>\n")
+				continue
+			}
+
+			if s, err := strconv.ParseInt(line_parts[1], 10, 64); err == nil {
+				start = s
+			} else {
+				fmt.Printf("Invalid start value: %s\n", line_parts[1])
+				continue
+			}
+
+			if s, err := strconv.ParseInt(line_parts[2], 10, 64); err == nil {
+				stop = s
+			} else {
+				fmt.Printf("Invalid stop value: %s\n", line_parts[2])
+				continue
+			}
+
+			topoHeight := chain.Load_TOPO_HEIGHT()
+			if start < 0 || start > topoHeight {
+				fmt.Printf("Start value should be between 0 and current topo height (%d)\n", topoHeight)
+				continue
+			}
+
+			if start > stop || stop > topoHeight {
+				fmt.Printf("Stop value should be >= start and <= current topo height (%d)\n", topoHeight)
+				continue
+			}
+
+			for i := start; i <= stop; i++ {
+				currentBlockID, err := chain.Load_Block_Topological_order_at_index(i)
+				if err != nil {
+					fmt.Printf("Skipping block at topo height %d due to error %s\n", i, err)
+					continue
+				}
+
+				timestamp := uint64(0)
+				diff := new(big.Int)
+				if chain.Block_Exists(currentBlockID) {
+					timestamp = chain.Load_Block_Timestamp(currentBlockID)
+					diff = chain.Load_Block_Difficulty(currentBlockID)
+				}
+
+				version, err := chain.ReadBlockSnapshotVersion(currentBlockID)
+				if err != nil {
+					fmt.Printf("Skipping block %s due to snapshot version error %s\n", currentBlockID, err)
+					continue
+				}
+
+				balanceHash, err := chain.Load_Merkle_Hash(version)
+				if err != nil {
+					fmt.Printf("Skipping block %s due to balance tree error %s\n", currentBlockID, err)
+					continue
+				}
+
+				fmt.Printf("TopoHeight: %d Height: %d Timestamp: %d Difficulty: %s\n", i, chain.Load_Height_for_BL_ID(currentBlockID), timestamp, diff.String())
+				fmt.Printf("BlockID: %s BalanceTree: %s\n", currentBlockID, balanceHash)
 			}
 
 		case strings.ToLower(line) == "status":
