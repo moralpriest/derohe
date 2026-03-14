@@ -423,73 +423,66 @@ func main() {
 		case command == "print_block":
 
 			fmt.Printf("printing block\n")
+			var hash crypto.Hash
+
 			if len(line_parts) == 2 && len(line_parts[1]) == 64 {
 				bl_raw, err := hex.DecodeString(strings.ToLower(line_parts[1]))
-
 				if err != nil {
-					fmt.Printf("err while decoding txid err %s\n", err)
+					fmt.Printf("err while decoding blid err %s\n", err)
 					continue
 				}
-				var hash crypto.Hash
 				copy(hash[:32], []byte(bl_raw))
-
-				bl, err := chain.Load_BL_FROM_ID(hash)
-				if err == nil {
-					fmt.Printf("Block ID : %s\n", hash)
-					fmt.Printf("Block : %x\n", bl.Serialize())
-					fmt.Printf("difficulty: %s\n", chain.Load_Block_Difficulty(hash).String())
-					//fmt.Printf("Orphan: %v\n",chain.Is_Block_Orphan(hash))
-
-					json_bytes, err := json.Marshal(bl)
-
-					fmt.Printf("%s  err : %s\n", string(prettyprint_json(json_bytes)), err)
-				} else {
-					fmt.Printf("Err %s\n", err)
-				}
 			} else if len(line_parts) == 2 {
 				if s, err := strconv.ParseInt(line_parts[1], 10, 64); err == nil {
 					_ = s
 					// first load block id from topo height
 
-					hash, err := chain.Load_Block_Topological_order_at_index(s)
+					hash, err = chain.Load_Block_Topological_order_at_index(s)
 					if err != nil {
 						fmt.Printf("Skipping block at topo height %d due to error %s\n", s, err)
 						continue
 					}
-					bl, err := chain.Load_BL_FROM_ID(hash)
-					if err == nil {
-						fmt.Printf("Block ID : %s\n", hash)
-						fmt.Printf("Block : %x\n", bl.Serialize())
-						fmt.Printf("difficulty: %s\n", chain.Load_Block_Difficulty(hash).String())
-						fmt.Printf("Height: %d\n", chain.Load_Height_for_BL_ID(hash))
-						fmt.Printf("TopoHeight: %d\n", s)
-
-						version, err := chain.ReadBlockSnapshotVersion(hash)
-						if err != nil {
-							panic(err)
-						}
-
-						bhash, err := chain.Load_Merkle_Hash(version)
-
-						if err != nil {
-							panic(err)
-						}
-
-						fmt.Printf("BALANCE_TREE : %s\n", bhash)
-
-						//fmt.Printf("Orphan: %v\n",chain.Is_Block_Orphan(hash))
-
-						json_bytes, err := json.Marshal(bl)
-
-						fmt.Printf("%s  err : %s\n", string(prettyprint_json(json_bytes)), err)
-					} else {
-						fmt.Printf("Err %s\n", err)
-					}
-
-				} else {
-					fmt.Printf("print_block  needs a single block id as argument\n")
 				}
+			} else {
+				fmt.Printf("print_block  needs a single block id as argument\n")
+				continue
 			}
+			bl, err := chain.Load_BL_FROM_ID(hash)
+			if err != nil {
+				fmt.Printf("Err %s\n", err)
+				continue
+			}
+
+			header, _ := derodrpc.GetBlockHeader(chain, hash)
+			fmt.Fprintf(os.Stdout, "BLID:%s\n", bl.GetHash())
+			fmt.Fprintf(os.Stdout, "Major version:%d Minor version: %d ", bl.Major_Version, bl.Minor_Version)
+			fmt.Fprintf(os.Stdout, "Height:%d ", bl.Height)
+			fmt.Fprintf(os.Stdout, "Timestamp:%d  (%s)\n", bl.Timestamp, bl.GetTimestamp())
+			for i := range bl.Tips {
+				fmt.Fprintf(os.Stdout, "Past %d:%s\n", i, bl.Tips[i])
+			}
+			for i, mbl := range bl.MiniBlocks {
+				fmt.Fprintf(os.Stdout, "Mini %d:%s %s\n", i, mbl, header.Miners[i])
+			}
+			for i, txid := range bl.Tx_hashes {
+				fmt.Fprintf(os.Stdout, "tx %d:%s\n", i, txid)
+			}
+
+			fmt.Printf("difficulty: %s\n", chain.Load_Block_Difficulty(hash).String())
+			fmt.Printf("TopoHeight: %d\n", chain.Load_Block_Topological_order(hash))
+
+			version, err := chain.ReadBlockSnapshotVersion(hash)
+			if err != nil {
+				panic(err)
+			}
+
+			bhash, err := chain.Load_Merkle_Hash(version)
+			if err != nil {
+				panic(err)
+			}
+
+			fmt.Printf("BALANCE_TREE : %s\n", bhash)
+			fmt.Printf("MINING REWARD : %s\n", globals.FormatMoney(blockchain.CalcBlockReward(bl.Height)))
 
 		case command == "print_bc":
 			fmt.Printf("printing block chain\n")
@@ -591,53 +584,6 @@ func main() {
 			} else {
 				fmt.Printf("print_tx needs a single transaction id as argument\n")
 			}
-
-		case command == "peer_list":
-			p2p.PeerList_Print()
-
-		case command == "sync_info":
-			p2p.Connection_Print()
-
-		case command == "start_mining":
-			fmt.Printf("start_mining is not supported in simulator (auto-mining is managed internally)\n")
-
-		case command == "stop_mining":
-			fmt.Printf("stop_mining is not supported in simulator (use --noautomine to disable)\n")
-
-		case command == "ban":
-			if len(line_parts) >= 4 || len(line_parts) == 1 {
-				fmt.Printf("IP address required to ban\n")
-				break
-			}
-
-			if len(line_parts) == 3 {
-				if s, err := strconv.ParseInt(line_parts[2], 10, 64); err == nil && s >= 0 {
-					_ = p2p.Ban_Address(line_parts[1], uint64(s))
-					break
-				} else {
-					fmt.Printf("err parsing ban time (only positive number) %s\n", err)
-					break
-				}
-			}
-
-			if err := p2p.Ban_Address(line_parts[1], 10*60); err != nil {
-				fmt.Printf("err parsing address %s\n", err)
-			}
-
-		case command == "unban":
-			if len(line_parts) >= 3 || len(line_parts) == 1 {
-				fmt.Printf("IP address required to unban\n")
-				break
-			}
-
-			if err := p2p.UnBan_Address(line_parts[1]); err != nil {
-				fmt.Printf("err unbanning %s, err = %s\n", line_parts[1], err)
-			} else {
-				fmt.Printf("unban %s successful\n", line_parts[1])
-			}
-
-		case command == "bans":
-			p2p.BanList_Print()
 
 		case strings.ToLower(line) == "status":
 
@@ -783,14 +729,7 @@ func usage(w io.Writer) {
 	io.WriteString(w, "\t\033[1mprint_height\033[0m\tPrint local blockchain height\n")
 	io.WriteString(w, "\t\033[1mprint_tx\033[0m\tPrint transaction, print_tx <transaction_hash>\n")
 	io.WriteString(w, "\t\033[1mstatus\033[0m\t\tShow general information\n")
-	io.WriteString(w, "\t\033[1mstart_mining\033[0m\tStart mining (not supported in simulator)\n")
-	io.WriteString(w, "\t\033[1mstop_mining\033[0m\tStop mining (not supported in simulator)\n")
-	io.WriteString(w, "\t\033[1mpeer_list\033[0m\tPrint peer list\n")
-	io.WriteString(w, "\t\033[1msync_info\033[0m\tPrint information about connected peers and their state\n")
 	io.WriteString(w, "\t\033[1mbye\033[0m\t\tQuit the daemon\n")
-	io.WriteString(w, "\t\033[1mban\033[0m\t\tBan specific ip from making any connections\n")
-	io.WriteString(w, "\t\033[1munban\033[0m\t\tRevoke restrictions on previously banned ips\n")
-	io.WriteString(w, "\t\033[1mbans\033[0m\t\tPrint current ban list\n")
 	io.WriteString(w, "\t\033[1mmempool_print\033[0m\t\tprint mempool contents\n")
 	io.WriteString(w, "\t\033[1mmempool_delete_tx\033[0m\t\tDelete specific tx from mempool\n")
 	io.WriteString(w, "\t\033[1mmempool_flush\033[0m\t\tFlush mempool\n")
@@ -812,14 +751,6 @@ var completer = readline.NewPrefixCompleter(
 	readline.PcItem("print_tree"),
 	readline.PcItem("print_height"),
 	readline.PcItem("print_tx"),
-	readline.PcItem("peer_list"),
-	readline.PcItem("sync_info"),
-	readline.PcItem("start_mining"),
-	readline.PcItem("stop_mining"),
-	readline.PcItem("ban"),
-	readline.PcItem("unban"),
-	readline.PcItem("bans"),
-
 	readline.PcItem("mempool_flush"),
 	readline.PcItem("mempool_delete_tx"),
 	readline.PcItem("mempool_print"),
