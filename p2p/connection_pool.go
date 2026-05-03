@@ -713,7 +713,9 @@ func trigger_sync() {
 						connection.logger.V(1).Info("sync done")
 
 					} else { // we need a state only sync, bootstrap without history but verified chain
-						connection.bootstrap_chain()
+						if err := connection.bootstrap_chain(); err != nil {
+							connection.bootstrap_fail(err)
+						}
 					}
 					break
 				}

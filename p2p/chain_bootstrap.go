@@ -16,50 +16,82 @@
 
 package p2p
 
-import "fmt"
+import (
+	"encoding/binary"
+	"fmt"
+	"math/big"
+	"math/bits"
+	"os"
+	"path/filepath"
+	"sync/atomic"
+	"time"
 
-//import "net"
-import "time"
-import "math/big"
-import "math/bits"
-import "sync/atomic"
-import "encoding/binary"
-
-import "github.com/deroproject/derohe/config"
-import "github.com/deroproject/derohe/block"
+	"github.com/deroproject/derohe/block"
+	"github.com/deroproject/derohe/config"
+	"github.com/deroproject/derohe/cryptography/crypto" //import "net"
+	"github.com/deroproject/derohe/globals"
+	"github.com/deroproject/derohe/transaction"
+	"github.com/deroproject/graviton"
+)
 
 //import "github.com/deroproject/derohe/errormsg"
-import "github.com/deroproject/derohe/transaction"
-
-import "github.com/deroproject/graviton"
-
-import "github.com/deroproject/derohe/cryptography/crypto"
 
 //import "github.com/deroproject/derosuite/blockchain"
 
 // we are expecting other side to have a heavier PoW chain
 // this is for the case when the chain only moves in pruned state
 // if after bootstraping the chain can continousky sync for few minutes, this means we have got the job done
-// TODO if during bootstrap error occurs, then we must discard data and restart from scratch
 // resume may be implemented in future
-func (connection *Connection) bootstrap_fail(err error, msg string) {
-	connection.logger.V(1).Error(err, msg)
+
+// create backup of the balances database
+func bootstrap_init() error {
+	dataDir := globals.GetDataDirectory()
+	if _, err := os.Stat(filepath.Join(dataDir, "bootstrap")); err == nil {
+		if err := os.RemoveAll(filepath.Join(dataDir, "bootstrap")); err != nil {
+			return err
+		}
+	}
+
+	err := os.CopyFS(
+		filepath.Join(dataDir, "bootstrap"), os.DirFS(filepath.Join(dataDir, "balances")))
+	if err != nil {
+		return fmt.Errorf("failed to copy bootstrap data: %w", err)
+	}
+
+	return nil
+}
+
+// if bootstrap fails, we must restore the backup (only step 1 and step 2)
+func (connection *Connection) bootstrap_fail(msg error) {
+	dataDir := globals.GetDataDirectory()
+	if err := os.RemoveAll(filepath.Join(dataDir, "balances")); err == nil {
+		if err := os.CopyFS(filepath.Join(dataDir, "balances"), os.DirFS(filepath.Join(dataDir, "bootstrap"))); err != nil {
+			connection.logger.V(1).Error(err, "Bootstrap: failed to restore balances from backup")
+		}
+	} else {
+		connection.logger.V(1).Error(err, "Bootstrap: failed to remove balances directory during restore")
+	}
+	connection.logger.Error(msg, "Bootstrap failed")
 	connection.exit()
 }
 
-func (connection *Connection) bootstrap_chain() {
+func (connection *Connection) bootstrap_chain() error {
 	defer handle_connection_panic(connection)
 	var request ChangeList
 	var response Changes
-	// var err error
+	var err error
 	var zerohash crypto.Hash
+
+	if err := bootstrap_init(); err != nil {
+		return err
+	}
 
 	// peer's chain is only 110 height, so do not bootstrap
 	if connection.TopoHeight-50-max_request_topoheights < 10 {
 		connection.logger.Info("fastsync cannot be done as peer's chain has low height")
 		connection.logger.Info("will do normal sync")
 		connection.sync_chain()
-		return
+		return nil
 	}
 
 	// we will request top 60 blocks
@@ -76,9 +108,8 @@ func (connection *Connection) bootstrap_chain() {
 	}
 
 	fill_common(&request.Common) // fill common info
-	if err := connection.Client.Call("Peer.ChangeSet", request, &response); err != nil {
-		connection.bootstrap_fail(err, "Call failed ChangeSet")
-		return
+	if err = connection.Client.Call("Peer.ChangeSet", request, &response); err != nil {
+		return err
 	}
 	// we have a response, see if its valid and try to add to get the blocks
 	connection.logger.V(1).Info("changeset received", "keycount", response.KeyCount, "sccount", response.SCKeyCount)
@@ -110,9 +141,8 @@ func (connection *Connection) bootstrap_chain() {
 			ts_request := Request_Tree_Section_Struct{Topo: request.TopoHeights[0], TreeName: []byte(config.BALANCE_TREE), Section: section[:], SectionLength: uint64(path_length)}
 			var ts_response Response_Tree_Section_Struct
 			fill_common(&ts_request.Common)
-			if err := connection.Client.Call("Peer.TreeSection", ts_request, &ts_response); err != nil {
-				connection.bootstrap_fail(err, "Call failed TreeSection")
-				return
+			if err = connection.Client.Call("Peer.TreeSection", ts_request, &ts_response); err != nil {
+				return err
 			} else {
 				// now we must write all the state changes to gravition
 				var balance_tree *graviton.Tree
@@ -124,8 +154,7 @@ func (connection *Connection) bootstrap_chain() {
 
 				if len(ts_response.Keys) != len(ts_response.Values) {
 					//rlog.Warnf("Incoming Key count %d value count %d \"%s\" ", len(ts_response.Keys), len(ts_response.Values), globals.CTXString(connection.logger))
-					connection.exit()
-					return
+					return fmt.Errorf("mismatched key and value count")
 				}
 				//rlog.Debugf("chunk %d Will write %d keys\n", i, len(ts_response.Keys))
 
@@ -174,9 +203,8 @@ func (connection *Connection) bootstrap_chain() {
 			ts_request := Request_Tree_Section_Struct{Topo: request.TopoHeights[0], TreeName: []byte(config.SC_META), Section: section[:], SectionLength: uint64(path_length)}
 			var ts_response Response_Tree_Section_Struct
 			fill_common(&ts_request.Common)
-			if err := connection.Client.Call("Peer.TreeSection", ts_request, &ts_response); err != nil {
-				connection.bootstrap_fail(err, "Call failed TreeSection")
-				return
+			if err = connection.Client.Call("Peer.TreeSection", ts_request, &ts_response); err != nil {
+				return err
 			} else {
 				// now we must write all the state changes to gravition
 				var changed_trees []*graviton.Tree
@@ -191,8 +219,7 @@ func (connection *Connection) bootstrap_chain() {
 
 				if len(ts_response.Keys) != len(ts_response.Values) {
 					//rlog.Warnf("Incoming Key count %d value count %d \"%s\" ", len(ts_response.Keys), len(ts_response.Values), globals.CTXString(connection.logger))
-					connection.exit()
-					return
+					return fmt.Errorf("mismatched key and value count")
 				}
 				//rlog.Debugf("SC chunk %d Will write %d keys\n", i, len(ts_response.Keys))
 
@@ -204,9 +231,8 @@ func (connection *Connection) bootstrap_chain() {
 					sc_request := Request_Tree_Section_Struct{Topo: request.TopoHeights[0], TreeName: ts_response.Keys[j], Section: section[:], SectionLength: uint64(0)}
 					var sc_response Response_Tree_Section_Struct
 					fill_common(&sc_request.Common)
-					if err := connection.Client.Call("Peer.TreeSection", sc_request, &sc_response); err != nil {
-						connection.bootstrap_fail(err, "Call failed TreeSection")
-						return
+					if err = connection.Client.Call("Peer.TreeSection", sc_request, &sc_response); err != nil {
+						return err
 					} else {
 
 						var sc_data_tree *graviton.Tree
@@ -236,15 +262,12 @@ func (connection *Connection) bootstrap_chain() {
 								sc_ts_request := Request_Tree_Section_Struct{Topo: request.TopoHeights[0], TreeName: ts_response.Keys[j], Section: sc_section[:], SectionLength: uint64(sc_path_length)}
 								var sc_ts_response Response_Tree_Section_Struct
 								fill_common(&sc_ts_request.Common)
-								if err := connection.Client.Call("Peer.TreeSection", sc_ts_request, &sc_ts_response); err != nil {
-									connection.bootstrap_fail(err, "Call failed TreeSection")
-									return
+								if err = connection.Client.Call("Peer.TreeSection", sc_ts_request, &sc_ts_response); err != nil {
+									return err
 								} else { // request was successfull
 
 									if len(sc_ts_response.Keys) != len(sc_ts_response.Values) {
-										connection.logger.V(1).Error(nil, "Wrong key/values", "Keycount", len(sc_ts_response.Keys), "valuecount", len(sc_ts_response.Values))
-										connection.exit()
-										return
+										return fmt.Errorf("mismatched key and value count")
 									}
 									//fmt.Printf("writing SC chunk %d/%d (%d)  writing %d keys %x\n", k, sc_chunks, sc_response.KeyCount, len(sc_ts_response.Keys), ts_response.Keys[j])
 									for l := range sc_ts_response.Keys {
@@ -291,7 +314,7 @@ func (connection *Connection) bootstrap_chain() {
 		if err != nil { // we have a block which could not be deserialized ban peer
 			connection.logger.Error(err, "Error Incoming block could not be deserialised.")
 			connection.exit()
-			return
+			return nil
 		}
 
 		// give the chain some more time to respond
@@ -309,12 +332,12 @@ func (connection *Connection) bootstrap_chain() {
 			if err != nil { // we have a tx which could not be deserialized ban peer
 				connection.logger.Error(err, "Error Incoming TX could not be deserialized")
 				connection.exit()
-				return
+				return nil
 			}
 			if bl.Tx_hashes[j] != tx.GetHash() {
 				connection.logger.Error(err, "Error Incoming TX has mismatch.")
 				connection.exit()
-				return
+				return nil
 			}
 
 			cbl.Txs = append(cbl.Txs, &tx)
@@ -332,7 +355,7 @@ func (connection *Connection) bootstrap_chain() {
 		if _, ok := diff.SetString(response.CBlocks[i].Difficulty, 10); !ok { // if Cumulative_Difficulty could not be parsed, kill connection
 			connection.logger.Error(fmt.Errorf("Could not Parse Difficulty in common"), "", "diff", response.CBlocks[i].Difficulty)
 			connection.exit()
-			return
+			return nil
 		}
 
 		// now we must write all the state changes to gravition
@@ -385,5 +408,5 @@ func (connection *Connection) bootstrap_chain() {
 	// load the chain from the disk
 	chain.Initialise_Chain_From_DB()
 	chain.Sync = true
-	return
+	return nil
 }
