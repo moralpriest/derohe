@@ -46,31 +46,30 @@ import (
 // create backup of the balances database
 func bootstrap_init() error {
 	dataDir := globals.GetDataDirectory()
-	if _, err := os.Stat(filepath.Join(dataDir, "bootstrap")); err == nil {
-		if err := os.RemoveAll(filepath.Join(dataDir, "bootstrap")); err != nil {
-			return err
-		}
-	}
-
-	err := os.CopyFS(
-		filepath.Join(dataDir, "bootstrap"), os.DirFS(filepath.Join(dataDir, "balances")))
+	os.RemoveAll(filepath.Join(dataDir, "bootstrap"))
+	err := os.CopyFS(filepath.Join(dataDir, "bootstrap"), os.DirFS(filepath.Join(dataDir, "balances")))
 	if err != nil {
 		return fmt.Errorf("failed to copy bootstrap data: %w", err)
 	}
-
 	return nil
 }
 
 // if bootstrap fails, we must restore the backup (only step 1 and step 2)
 func (connection *Connection) bootstrap_fail(msg error) {
+	var err error
+
 	dataDir := globals.GetDataDirectory()
-	if err := os.RemoveAll(filepath.Join(dataDir, "balances")); err == nil {
-		if err := os.CopyFS(filepath.Join(dataDir, "balances"), os.DirFS(filepath.Join(dataDir, "bootstrap"))); err != nil {
-			connection.logger.V(1).Error(err, "Bootstrap: failed to restore balances from backup")
-		}
-	} else {
-		connection.logger.V(1).Error(err, "Bootstrap: failed to remove balances directory during restore")
+	if err := os.RemoveAll(filepath.Join(dataDir, "balances")); err != nil {
+		connection.logger.Error(err, "Bootstrap: failed to remove balances directory during restore")
 	}
+	if err := os.CopyFS(filepath.Join(dataDir, "balances"), os.DirFS(filepath.Join(dataDir, "bootstrap"))); err != nil {
+		connection.logger.Error(err, "Bootstrap: failed to restore balances from backup")
+	}
+	chain.Store.Balance_store, err = graviton.NewDiskStore(filepath.Join(dataDir, "balances"))
+	if err != nil {
+		connection.logger.Error(err, "Bootstrap: failed to initialize balance store")
+	}
+
 	connection.logger.Error(msg, "Bootstrap failed")
 	connection.exit()
 }
@@ -298,6 +297,7 @@ func (connection *Connection) bootstrap_chain() error {
 			connection.logger.Info("Bootstrap in progress(step 2)", "percent", float32(i*100)/float32(chunks))
 		}
 	}
+	os.RemoveAll(filepath.Join(globals.GetDataDirectory(), "bootstrap"))
 
 	for i := int64(0); i <= request.TopoHeights[0]; i++ {
 		chain.Store.Topo_store.Write(i, zerohash, commit_version, 0) // commit everything
