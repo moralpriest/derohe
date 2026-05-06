@@ -52,7 +52,7 @@ type Account struct {
 	SeedLanguage   string  `json:"seedlanguage"`
 	FeesMultiplier float32 `json:"feesmultiplier"` // fees multiplier accurate to 2 decimals
 	Ringsize       int     `json:"ringsize"`       // default mixn to use for txs
-	mainnet        bool
+	Mainnet        bool `json:"mainnet"`
 	Registered     bool `json:"registered"`
 
 	Height     uint64 `json:"height"`     // block height till where blockchain has been scanned
@@ -223,7 +223,7 @@ func (account *Account) GetAddress() (addr rpc.Address) {
 // convert a user account to address
 func (w *Wallet_Memory) GetAddress() (addr rpc.Address) {
 	addr = w.account.GetAddress()
-	addr.Mainnet = w.account.mainnet
+	addr.Mainnet = w.account.Mainnet
 	return addr
 }
 
@@ -427,12 +427,12 @@ func (w *Wallet_Memory) SetOfflineMode() bool {
 }
 
 func (w *Wallet_Memory) SetNetwork(mainnet bool) bool {
-	w.account.mainnet = mainnet
-	return w.account.mainnet
+	w.account.Mainnet = mainnet
+	return w.account.Mainnet
 }
 
 func (w *Wallet_Memory) GetNetwork() bool {
-	return w.account.mainnet
+	return w.account.Mainnet
 }
 
 // return current mode
