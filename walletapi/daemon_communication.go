@@ -160,6 +160,12 @@ func test_connectivity() (err error) {
 		return
 	}
 
+	// Check for simulator first (simulator is neither mainnet nor testnet)
+	if strings.ToLower(info.Network) == "simulator" {
+		simulator = true
+		return nil
+	}
+
 	// detect whether both are in different modes
 	//  daemon is in testnet and wallet in mainnet or
 	// daemon
@@ -168,11 +174,6 @@ func test_connectivity() (err error) {
 		logger.Error(err, "Mainnet/Testnet mismatch")
 		return
 	}
-
-	if strings.ToLower(info.Network) == "simulator" {
-		simulator = true
-	}
-
 	daemon_height = info.Height
 	daemon_topoheight = info.TopoHeight
 	//	logger.Info("connection is maintained")
