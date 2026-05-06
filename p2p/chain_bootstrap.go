@@ -21,15 +21,12 @@ import (
 	"fmt"
 	"math/big"
 	"math/bits"
-	"os"
-	"path/filepath"
 	"sync/atomic"
 	"time"
 
 	"github.com/deroproject/derohe/block"
 	"github.com/deroproject/derohe/config"
 	"github.com/deroproject/derohe/cryptography/crypto" //import "net"
-	"github.com/deroproject/derohe/globals"
 	"github.com/deroproject/derohe/transaction"
 	"github.com/deroproject/graviton"
 )
@@ -41,35 +38,16 @@ import (
 // we are expecting other side to have a heavier PoW chain
 // this is for the case when the chain only moves in pruned state
 // if after bootstraping the chain can continousky sync for few minutes, this means we have got the job done
-// resume may be implemented in future
 
-// create backup of the balances database
-func bootstrap_init() error {
-	dataDir := globals.GetDataDirectory()
-	os.RemoveAll(filepath.Join(dataDir, "bootstrap"))
-	err := os.CopyFS(filepath.Join(dataDir, "bootstrap"), os.DirFS(filepath.Join(dataDir, "balances")))
-	if err != nil {
-		return fmt.Errorf("failed to copy bootstrap data: %w", err)
-	}
-	return nil
+type sync_progress struct {
+	Step   uint
+	Chunk  int64
+	Height int64
 }
 
-// if bootstrap fails, we must restore the backup (only step 1 and step 2)
+var state sync_progress
+
 func (connection *Connection) bootstrap_fail(msg error) {
-	var err error
-
-	dataDir := globals.GetDataDirectory()
-	if err := os.RemoveAll(filepath.Join(dataDir, "balances")); err != nil {
-		connection.logger.Error(err, "Bootstrap: failed to remove balances directory during restore")
-	}
-	if err := os.CopyFS(filepath.Join(dataDir, "balances"), os.DirFS(filepath.Join(dataDir, "bootstrap"))); err != nil {
-		connection.logger.Error(err, "Bootstrap: failed to restore balances from backup")
-	}
-	chain.Store.Balance_store, err = graviton.NewDiskStore(filepath.Join(dataDir, "balances"))
-	if err != nil {
-		connection.logger.Error(err, "Bootstrap: failed to initialize balance store")
-	}
-
 	connection.logger.Error(msg, "Bootstrap failed")
 	connection.exit()
 }
@@ -81,10 +59,6 @@ func (connection *Connection) bootstrap_chain() error {
 	var err error
 	var zerohash crypto.Hash
 
-	if err := bootstrap_init(); err != nil {
-		return err
-	}
-
 	// peer's chain is only 110 height, so do not bootstrap
 	if connection.TopoHeight-50-max_request_topoheights < 10 {
 		connection.logger.Info("fastsync cannot be done as peer's chain has low height")
@@ -93,8 +67,13 @@ func (connection *Connection) bootstrap_chain() error {
 		return nil
 	}
 
+	if state.Height == 0 {
+		state.Height = connection.TopoHeight
+		state.Step = 1
+	}
+
 	// we will request top 60 blocks
-	ctopo := connection.TopoHeight - 50 // last 50 blocks have to be synced, this syncing will help us detect error
+	ctopo := state.Height - 50 // last 50 blocks have to be synced, this syncing will help us detect error
 	var topos []int64
 	for i := ctopo - (max_request_topoheights - 1); i < ctopo; i++ {
 		topos = append(topos, i)
@@ -135,50 +114,54 @@ func (connection *Connection) bootstrap_chain() error {
 
 		total_keys := 0
 
-		for i := int64(0); i < chunks; i++ {
-			binary.BigEndian.PutUint64(section[:], bits.Reverse64(uint64(i))) // place reverse path
-			ts_request := Request_Tree_Section_Struct{Topo: request.TopoHeights[0], TreeName: []byte(config.BALANCE_TREE), Section: section[:], SectionLength: uint64(path_length)}
-			var ts_response Response_Tree_Section_Struct
-			fill_common(&ts_request.Common)
-			if err = connection.Client.Call("Peer.TreeSection", ts_request, &ts_response); err != nil {
-				return err
-			} else {
-				// now we must write all the state changes to gravition
-				var balance_tree *graviton.Tree
-				if ss, err := chain.Store.Balance_store.LoadSnapshot(0); err != nil {
-					panic(err)
-				} else if balance_tree, err = ss.GetTree(config.BALANCE_TREE); err != nil {
-					panic(err)
+		if state.Step < 2 {
+			for i := state.Chunk; i < chunks; i++ {
+				state.Chunk = i
+				binary.BigEndian.PutUint64(section[:], bits.Reverse64(uint64(i))) // place reverse path
+				ts_request := Request_Tree_Section_Struct{Topo: request.TopoHeights[0], TreeName: []byte(config.BALANCE_TREE), Section: section[:], SectionLength: uint64(path_length)}
+				var ts_response Response_Tree_Section_Struct
+				fill_common(&ts_request.Common)
+				if err = connection.Client.Call("Peer.TreeSection", ts_request, &ts_response); err != nil {
+					return err
+				} else {
+					// now we must write all the state changes to gravition
+					var balance_tree *graviton.Tree
+					if ss, err := chain.Store.Balance_store.LoadSnapshot(0); err != nil {
+						panic(err)
+					} else if balance_tree, err = ss.GetTree(config.BALANCE_TREE); err != nil {
+						panic(err)
+					}
+
+					if len(ts_response.Keys) != len(ts_response.Values) {
+						//rlog.Warnf("Incoming Key count %d value count %d \"%s\" ", len(ts_response.Keys), len(ts_response.Values), globals.CTXString(connection.logger))
+						return fmt.Errorf("mismatched key and value count")
+					}
+					//rlog.Debugf("chunk %d Will write %d keys\n", i, len(ts_response.Keys))
+
+					for j := range ts_response.Keys {
+						balance_tree.Put(ts_response.Keys[j], ts_response.Values[j])
+					}
+					total_keys += len(ts_response.Keys)
+
+					commit_version, err = graviton.Commit(balance_tree)
+					if err != nil {
+						panic(err)
+					}
+
+					h, err := balance_tree.Hash()
+					_ = h
+					_ = err
+					//rlog.Debugf("total keys %d hash %x err %s\n", total_keys, h, err)
+
 				}
-
-				if len(ts_response.Keys) != len(ts_response.Values) {
-					//rlog.Warnf("Incoming Key count %d value count %d \"%s\" ", len(ts_response.Keys), len(ts_response.Values), globals.CTXString(connection.logger))
-					return fmt.Errorf("mismatched key and value count")
-				}
-				//rlog.Debugf("chunk %d Will write %d keys\n", i, len(ts_response.Keys))
-
-				for j := range ts_response.Keys {
-					balance_tree.Put(ts_response.Keys[j], ts_response.Values[j])
-				}
-				total_keys += len(ts_response.Keys)
-
-				commit_version, err = graviton.Commit(balance_tree)
-				if err != nil {
-					panic(err)
-				}
-
-				h, err := balance_tree.Hash()
-				_ = h
-				_ = err
-				//rlog.Debugf("total keys %d hash %x err %s\n", total_keys, h, err)
-
+				connection.logger.Info("Bootstrap in progress(step1)", "percent", float32(i*100)/float32(chunks))
 			}
-			connection.logger.Info("Bootstrap in progress(step1)", "percent", float32(i*100)/float32(chunks))
+			state.Step = 2
+			state.Chunk = 0
 		}
 	}
 
 	{ // fetch and commit SC tree
-
 		chunksize := int64(640)
 		chunks_estm := response.SCKeyCount / chunksize
 		chunks := int64(1) // chunks need to be in power of 2
@@ -197,7 +180,8 @@ func (connection *Connection) bootstrap_chain() error {
 
 		total_keys := 0
 
-		for i := int64(0); i < chunks; i++ {
+		for i := state.Chunk; i < chunks; i++ {
+			state.Chunk = i
 			binary.BigEndian.PutUint64(section[:], bits.Reverse64(uint64(i))) // place reverse path
 			ts_request := Request_Tree_Section_Struct{Topo: request.TopoHeights[0], TreeName: []byte(config.SC_META), Section: section[:], SectionLength: uint64(path_length)}
 			var ts_response Response_Tree_Section_Struct
@@ -297,7 +281,6 @@ func (connection *Connection) bootstrap_chain() error {
 			connection.logger.Info("Bootstrap in progress(step 2)", "percent", float32(i*100)/float32(chunks))
 		}
 	}
-	os.RemoveAll(filepath.Join(globals.GetDataDirectory(), "bootstrap"))
 
 	for i := int64(0); i <= request.TopoHeights[0]; i++ {
 		chain.Store.Topo_store.Write(i, zerohash, commit_version, 0) // commit everything
