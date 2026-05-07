@@ -70,8 +70,35 @@ var Connected bool = false
 
 var mainnet = true
 var endpoint string
-var replacer = strings.NewReplacer("h", ":", "m", ":", "s", "")
 var logger logr.Logger
+
+func formatBlockAge(timestampMs uint64, now time.Time) string {
+	const maxInt64Timestamp = uint64(1<<63 - 1)
+	if timestampMs == 0 || timestampMs > maxInt64Timestamp {
+		return "unknown"
+	}
+
+	nowMs := now.UTC().UnixMilli()
+	blockMs := int64(timestampMs)
+	if blockMs >= nowMs {
+		return "0s ago"
+	}
+
+	age := time.Duration(nowMs-blockMs) * time.Millisecond
+	if days := age / (24 * time.Hour); days > 0 {
+		hours := (age % (24 * time.Hour)) / time.Hour
+		return fmt.Sprintf("%dd %dh ago", days, hours)
+	}
+	if hours := age / time.Hour; hours > 0 {
+		minutes := (age % time.Hour) / time.Minute
+		return fmt.Sprintf("%dh %02dm ago", hours, minutes)
+	}
+	if minutes := age / time.Minute; minutes > 0 {
+		seconds := (age % time.Minute) / time.Second
+		return fmt.Sprintf("%dm %02ds ago", minutes, seconds)
+	}
+	return fmt.Sprintf("%ds ago", age/time.Second)
+}
 
 func (cli *Client) Call(method string, params interface{}, result interface{}) error {
 
@@ -370,9 +397,12 @@ func load_block_from_rpc(info *block_info, block_hash string, recursive bool) (e
 	info.Height = bresult.Block_Header.Height
 	info.Depth = bresult.Block_Header.Depth
 
-	duration_millisecond := (uint64(time.Now().UTC().UnixMilli()) - bresult.Block_Header.Timestamp)
-	info.Age = replacer.Replace((time.Duration(duration_millisecond) * time.Millisecond).String())
-	info.Block_time = time.Unix(0, int64(bresult.Block_Header.Timestamp*uint64(time.Millisecond))).Format("2006-01-02 15:04:05")
+	info.Age = formatBlockAge(bresult.Block_Header.Timestamp, time.Now())
+	if bresult.Block_Header.Timestamp == 0 {
+		info.Block_time = "N/A (epoch 0)"
+	} else {
+		info.Block_time = time.Unix(0, int64(bresult.Block_Header.Timestamp*uint64(time.Millisecond))).UTC().Format("2006-01-02 15:04:05")
+	}
 	info.Epoch = bresult.Block_Header.Timestamp
 	info.Outputs = fmt.Sprintf("%.03f", float32(bresult.Block_Header.Reward)/1000000000000.0)
 	info.Size = "N/A"
@@ -649,7 +679,7 @@ func block_handler(w http.ResponseWriter, r *http.Request) {
 	// execute template now
 	data := map[string]interface{}{}
 
-	fill_common_info(data, false)
+	fill_common_info(data, true)
 	data["block"] = blinfo
 
 	err = all_templates.ExecuteTemplate(w, "block", data)
@@ -706,7 +736,7 @@ func tx_handler(w http.ResponseWriter, r *http.Request) {
 	// execute template now
 	data := map[string]interface{}{}
 
-	fill_common_info(data, false)
+	fill_common_info(data, true)
 	data["info"] = info
 
 	err = all_templates.ExecuteTemplate(w, "tx", data)
