@@ -95,12 +95,21 @@
     </div>
     <div class="info-list">
         <div class="info-row">
-            <div class="info-label">Miner Address</div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div class="info-label">Integrator Address</div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; padding-bottom: 0.5rem;">
                 <div class="info-value monospace" style="font-size: 0.85rem;">{{index .block.Mtx.OutAddress 0}}</div>
                 <button class="copy-btn" style="opacity: 1; font-size: 0.65rem;" onclick="copyToClipboard('{{index .block.Mtx.OutAddress 0}}', this)">Copy</button>
             </div>
         </div>
+        {{range $idx, $elem := .block.Miners}}
+        <div class="info-row">
+            <div class="info-label">Miner Address </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; padding-bottom: 0.5rem;">
+                <div class="info-value monospace" style="font-size: 0.85rem;">{{$elem}}</div>
+                <button class="copy-btn" style="opacity: 1; font-size: 0.65rem;" onclick="copyToClipboard('{{$elem}}', this)">Copy</button>
+            </div>
+        </div>
+        {{end}}
         <div class="info-row">
             <div class="info-label">Total Amount</div>
             <div class="info-value" style="color: #4ade80; font-weight: 600;">{{.block.Mtx.Amount}} DERO</div>

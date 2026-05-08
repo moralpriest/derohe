@@ -354,6 +354,7 @@ type block_info struct {
 	Nonce         uint64
 	Fees          string
 	Reward        string
+	Miners        []string
 	Size          string
 	Age           string //  time diff from current time
 	Block_time    string // UTC time from block header
@@ -415,6 +416,10 @@ func load_block_from_rpc(info *block_info, block_hash string, recursive bool) (e
 	info.Major_Version = bresult.Block_Header.Major_Version
 	info.Minor_Version = bresult.Block_Header.Minor_Version
 	info.Reward = fmt.Sprintf("%.05f", float32(bresult.Block_Header.Reward)/100000.0)
+	// include miniblock miners as well (10th miniblock is integrator)
+	if len(bresult.Block_Header.Miners) == 10 {
+		info.Miners = bresult.Block_Header.Miners[:len(bresult.Block_Header.Miners)-1]
+	}
 
 	block_bin, _ = hex.DecodeString(bresult.Blob)
 
