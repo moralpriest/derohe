@@ -145,7 +145,7 @@ func main() {
 	if _, ok := globals.Arguments["--log-dir"]; ok && globals.Arguments["--log-dir"] != nil {
 		logdir = globals.Arguments["--log-dir"].(string)
 		filename = filepath.Base(exename) + ".log"
-		filename = filepath.Join(logdir,filename)
+		filename = filepath.Join(logdir, filename)
 	}
 
 	globals.InitializeLog(l.Stdout(), &lumberjack.Logger{
@@ -863,9 +863,7 @@ restart_loop:
 			mempool_tx_count := len(chain.Mempool.Mempool_List_TX())
 			regpool_tx_count := len(chain.Regpool.Regpool_List_TX())
 
-			supply := uint64(0)
-
-			supply = (config.PREMINE + blockchain.CalcBlockReward(uint64(chain.Get_Height()))*uint64(chain.Get_Height())) // valid for few years
+			supply := blockchain.CalcSupply(uint64(chain.Get_Height()))
 
 			hostname, _ := os.Hostname()
 			fmt.Printf("STATUS MENU for DERO HE Node - Hostname: %s\n\n", hostname)
