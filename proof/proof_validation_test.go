@@ -24,23 +24,23 @@ func TestValidatePayloadProofAmount(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:        "at current supply (16.5M DERO)",
-			amount:      16_500_000_000_000, // 16.5M DERO - current supply
+			name:        "at current supply (~16.5M DERO)",
+			amount:      1_650_000_000_000, // 16.5M DERO * 100,000 atomic/DERO
 			shouldError: false,
 		},
 		{
-			name:        "near hard cap (21M DERO)",
-			amount:      21_000_000_000_000, // 21M DERO - hard cap
+			name:        "at hard cap (21M DERO)",
+			amount:      2_100_000_000_000, // 21M DERO * 100,000 atomic/DERO
 			shouldError: false,
 		},
 		{
-			name:        "exceeds hard cap (23M DERO)",
-			amount:      23_000_000_000_000, // 23M DERO - above 22M threshold
+			name:        "exceeds reasonable threshold (23M DERO)",
+			amount:      2_300_000_000_000, // 23M DERO - above the 22M reasonable threshold
 			shouldError: true,
 		},
 		{
-			name:        "exceeds hard cap (50M DERO)",
-			amount:      50_000_000_000_000, // 50M DERO
+			name:        "exceeds reasonable threshold (50M DERO)",
+			amount:      5_000_000_000_000, // 50M DERO * 100,000 atomic/DERO
 			shouldError: true,
 		},
 		{
