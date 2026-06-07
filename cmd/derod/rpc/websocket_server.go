@@ -29,7 +29,6 @@ import "sync/atomic"
 import "context"
 import "strings"
 import "runtime/debug"
-import "encoding/json"
 
 import "github.com/deroproject/derohe/config"
 import "github.com/deroproject/derohe/globals"
