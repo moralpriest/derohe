@@ -45,7 +45,7 @@ type Simulator struct {
 	Balances     map[string]map[string]uint64
 }
 
-func SimulatorInitialize(ss *graviton.Snapshot) *Simulator {
+func SimulatorInitialize(ss *graviton.Snapshot, topoHeight uint64) *Simulator {
 
 	var s Simulator
 	var err error
@@ -63,6 +63,7 @@ func SimulatorInitialize(ss *graviton.Snapshot) *Simulator {
 	}
 	s.ss = ss
 
+	s.height = topoHeight
 	s.balance_tree, err = ss.GetTree(config.BALANCE_TREE)
 	if err != nil {
 		panic(err)
