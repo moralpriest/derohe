@@ -39,6 +39,7 @@ func GetInfo(ctx context.Context) (result rpc.GetInfo_Result, err error) {
 	result.Height = chain.Get_Height()
 	result.StableHeight = chain.Get_Stable_Height()
 	result.TopoHeight = chain.Load_TOPO_HEIGHT()
+	result.PrunedHeight = chain.LocatePruneTopo()
 
 	{
 		version, err := chain.ReadBlockSnapshotVersion(chain.Get_Top_ID())
