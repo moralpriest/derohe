@@ -6,6 +6,10 @@ consensus deployment.
 
 **Status:** Reference spec — must be implemented before Phase 1 rollout.
 
+**Workaround C note:** Under the chosen operator-discipline path, the
+differential test must also verify that `GODEBUG=randmapiter=0` is set
+on all v1.26 nodes. See §13 for Workaround C-specific test requirements.
+
 ---
 
 ## 1. Architecture
@@ -353,6 +357,58 @@ at the same topoheight. If not, the upgrade has introduced a divergence.
 
 ## 12. Related Documents
 
-- `docs/go-1.26-upgrade-audit.md` — full audit, 17 sections
+- `docs/go-1.26-upgrade-audit.md` — full audit, 19 sections
 - `docs/go-1.26-fix-patches/` — 7 consensus-critical fix patches
+- `docs/go-1.26-operator-guide.md` — operator quick-start
 - `consensus/go126_compat_test.go` — Go 1.26 runtime compat tests
+
+---
+
+## 13. Workaround C Differential Testing
+
+Under Workaround C (`GODEBUG=randmapiter=0` on all daemons), the
+differential test must verify additional constraints:
+
+### 13.1 GODEBUG Flag Verification
+
+Before each phase exit criteria check, verify:
+
+```bash
+# Every v1.26 node must have the flag
+for pid in $(pgrep -f derod_v1.26); do
+    echo "Node $pid:"
+    cat /proc/$pid/environ | tr '\0' '\n' | grep GODEBUG
+done
+```
+
+All nodes must show `GODEBUG=randmapiter=0`. If any node is missing
+the flag, the test is invalid — treat as a test infrastructure failure.
+
+### 13.2 Negative Test: Remove Flag and Observe Divergence
+
+To validate that the flag is actually needed, run a controlled negative test:
+
+1. Start a v1.26 node **without** `GODEBUG=randmapiter=0`
+2. Start a v1.17 node on the same testnet
+3. Wait for 10 blocks
+4. **Expected:** state root diverges within 10 blocks (confirms the risk is real)
+5. Stop the v1.26 node, restart with the flag, re-sync from v1.17
+6. **Expected:** re-synced node produces matching state roots
+
+This test confirms the flag is not optional and validates the rollback procedure.
+
+### 13.3 Phase Exit Criteria Addition
+
+For each phase, add to the pass criteria:
+
+```
+[ ] GODEBUG=randmapiter=0 verified on all v1.26 nodes
+[ ] Negative test (flag removed) produced divergence within 10 blocks
+```
+
+### 13.4 Patch 07 (gob) Still Required
+
+The differential test must also verify patch 07 independently of
+the GODEBUG flag. Chunk sync between a v1.17 node and a v1.26 node
+(both with `GODEBUG=randmapiter=0`) must succeed without the flag
+fixing the gob issue — the flag does not affect gob wire format.

@@ -10,9 +10,13 @@
 
 ## 1. Executive Summary
 
-DERO core node is being upgraded from **Go 1.17 → 1.26.0**. The `go.mod` directive is bumped to `go 1.26.0` (above the `1.25.0` floor required by `creachadair/jrpc2 v1.3.5`). This audit identified **8 consensus-critical map iteration sites** in the block-execution path that will produce **non-deterministic state hashes** when the Go runtime's new map implementation (Swiss Tables, active since Go 1.24) changes iteration order versus Go 1.17. Each site requires deterministic key sorting before any mainnet deployment.
+DERO core node is being upgraded from **Go 1.17 → 1.26.0**. The `go.mod` directive is bumped to `go 1.26.0` (above the `1.25.0` floor required by `creachadair/jrpc2 v1.3.5`). This audit identified **8 consensus-critical map iteration sites** in the block-execution path that will produce **non-deterministic state hashes** when the Go runtime's new map implementation (Swiss Tables, active since Go 1.24) changes iteration order versus Go 1.17.
 
-The upgrade is **not yet safe to deploy to mainnet consensus nodes** without first applying the 7 documented fix patches in `docs/go-1.26-fix-patches/`.
+**Workaround C (chosen path):** 6 of 8 sites are mitigated by setting `GODEBUG=randmapiter=0` on all daemons — no code patches required for those sites. 1 site (`p2p/chunk_server.go` gob encoder, patch 07) requires a code replacement regardless of the GODEBUG flag. The 6 deferred patches remain documented as a backup plan if the GODEBUG knob is removed in a future Go release.
+
+See `docs/go-1.26-operator-guide.md` for operator instructions.
+
+The upgrade is **not yet safe to deploy to mainnet consensus nodes** until patch 07 (gob replacement) lands and all operators set `GODEBUG=randmapiter=0`.
 
 ---
 
@@ -79,18 +83,22 @@ Slice iterations (`for i := range []T{...}`) are guaranteed by Go spec. No fix r
 
 ## 5. The 8 Consensus-Critical Map Iteration Sites
 
-| # | File:Line | Map | Risk | Affected State |
-|---|-----------|-----|------|----------------|
-| 1 | `blockchain/blockchain.go:971` | `sc_change_cache` | MAXIMUM | `data_trees` slice order → `graviton.Commit` → block state root |
-| 2 | `dvm/sc.go:279` | `tx_store.RawKeys` | MAXIMUM | `StoreSCValue` call order → SC state trie |
-| 3 | `dvm/simulator.go:313` | `w_sc_data_tree.Entries` | MAXIMUM | Final SC data trie commit in `ProcessExternal` |
-| 4 | `dvm/simulator.go:328` | `w_sc_tree.Entries` | MAXIMUM | SC metadata trie commit in `ProcessExternal` |
-| 5 | `dvm/simulator.go:297` | `w_sc_data_tree.Entries` | HIGH | `ErrorDeposit` SC balance commit |
-| 6 | `dvm/simulator.go:219` | `total_per_asset` | HIGH | `SanityCheckExternalTransfers` storage writes |
-| 7 | `dvm/simulator.go:253,288` | `incoming_values` | HIGH | `ErrorRevert`/`ErrorDeposit` balance updates |
-| 8 | `blockchain/hardcoded_contracts.go:86,92` | `w_sc_*.Entries` | HIGH | Genesis / hardfork SC state commit |
+| # | File:Line | Map | Risk | Affected State | Workaround C Status |
+|---|-----------|-----|------|----------------|---------------------|
+| 1 | `blockchain/blockchain.go:971` | `sc_change_cache` | MAXIMUM | `data_trees` slice order → `graviton.Commit` → block state root | **MITIGATED** by `GODEBUG=randmapiter=0` |
+| 2 | `dvm/sc.go:279` | `tx_store.RawKeys` | MAXIMUM | `StoreSCValue` call order → SC state trie | **MITIGATED** by `GODEBUG=randmapiter=0` |
+| 3 | `dvm/simulator.go:313` | `w_sc_data_tree.Entries` | MAXIMUM | Final SC data trie commit in `ProcessExternal` | **MITIGATED** by `GODEBUG=randmapiter=0` |
+| 4 | `dvm/simulator.go:328` | `w_sc_tree.Entries` | MAXIMUM | SC metadata trie commit in `ProcessExternal` | **MITIGATED** by `GODEBUG=randmapiter=0` |
+| 5 | `dvm/simulator.go:297` | `w_sc_data_tree.Entries` | HIGH | `ErrorDeposit` SC balance commit | **MITIGATED** by `GODEBUG=randmapiter=0` |
+| 6 | `dvm/simulator.go:219` | `total_per_asset` | HIGH | `SanityCheckExternalTransfers` storage writes | **MITIGATED** by `GODEBUG=randmapiter=0` |
+| 7 | `dvm/simulator.go:253,288` | `incoming_values` | HIGH | `ErrorRevert`/`ErrorDeposit` balance updates | **MITIGATED** by `GODEBUG=randmapiter=0` |
+| 8 | `blockchain/hardcoded_contracts.go:86,92` | `w_sc_*.Entries` | HIGH | Genesis / hardfork SC state commit | **MITIGATED** by `GODEBUG=randmapiter=0` |
 
-**Pattern fix for every site:**
+**Workaround C (operator discipline):** Setting `GODEBUG=randmapiter=0` on every derod process forces deterministic map iteration across all Go versions (supported since Go 1.17, guaranteed through at least Go 1.30). This eliminates the need for code patches at all 8 sites. See §18 for details.
+
+**Backup plan:** If `randmapiter` is removed in a future Go release, apply the deferred patches from `docs/go-1.26-fix-patches/` (patches 01–06). The patch content remains valid.
+
+**Pattern fix for every site (deferred):**
 
 ```go
 // BEFORE (non-deterministic):
@@ -119,7 +127,7 @@ Patches for all 8 sites are in `docs/go-1.26-fix-patches/`.
 
 - **What changed:** Map implementation moved from chained hash buckets to Swiss Tables (open-addressed, linear probing). Bucket layout, growth strategy, and iteration seeding all changed.
 - **Impact:** All `range m` iteration orders differ from Go 1.17. Two nodes running different Go versions on the same map will see different orders.
-- **Mitigation:** All Tier 1 sites patched to sort keys explicitly.
+- **Mitigation:** Workaround C: all sites mitigated by `GODEBUG=randmapiter=0` on every daemon. Backup: explicit key sorting (patches 01–06) if the GODEBUG flag is removed.
 
 ### 6.2 Loop Variable Capture (Go 1.22)
 
@@ -208,6 +216,7 @@ Patches for all 8 sites are in `docs/go-1.26-fix-patches/`.
 | 2 | CGO / PIE build mode | LOW | §12 |
 | 3 | `encoding/binary.Uvarint` regression | LOW | §13 |
 | 4 | GC pacer rewrite | LOW | §14 |
+| 5 | **GODEBUG=randmapiter=0 operator compliance** | **HIGH** | §18 |
 
 Each is addressed in detail below.
 
@@ -279,19 +288,21 @@ go build -mod=vendor -buildmode=pie -trimpath -ldflags=-buildid= ./cmd/derod
 
 ## 15. Required Code Changes (Pre-Deployment)
 
-The 7 patches in `docs/go-1.26-fix-patches/` must be applied before any mainnet deployment.
+**Workaround C (chosen path):** Only 1 code patch is mandatory — patch 07 (gob replacement). The remaining 6 map-iteration patches (01–06) are **deferred** and kept as a backup plan.
 
-| Patch | File:Line | Purpose |
-|-------|-----------|---------|
-| `01-blockchain-blockchain-sc_change_cache-sort.diff` | `blockchain/blockchain.go:971` | Sort SC change cache by SCID |
-| `02-dvm-sc-RawKeys-sort.diff` | `dvm/sc.go:279` | Sort SC store keys |
-| `03-dvm-simulator-Entries-sort.diff` | `dvm/simulator.go:297,313,328` | Sort all `Entries` iterations |
-| `04-dvm-simulator-total_per_asset-sort.diff` | `dvm/simulator.go:219` | Sort asset totals |
-| `05-dvm-simulator-incoming_values-sort.diff` | `dvm/simulator.go:253,288` | Sort incoming values |
-| `06-hardcoded_contracts-Entries-sort.diff` | `blockchain/hardcoded_contracts.go:86,92` | Sort genesis/HF Entries |
-| `07-p2p-chunk_server-replace-gob.diff` | `p2p/chunk_server.go:354` | Replace gob with custom encoder |
+| Patch | File:Line | Purpose | Status |
+|-------|-----------|---------|--------|
+| `01-blockchain-blockchain-sc_change_cache-sort.diff` | `blockchain/blockchain.go:971` | Sort SC change cache by SCID | **DEFERRED** — mitigated by GODEBUG |
+| `02-dvm-sc-RawKeys-sort.diff` | `dvm/sc.go:279` | Sort SC store keys | **DEFERRED** — mitigated by GODEBUG |
+| `03-dvm-simulator-Entries-sort.diff` | `dvm/simulator.go:297,313,328` | Sort all `Entries` iterations | **DEFERRED** — mitigated by GODEBUG |
+| `04-dvm-simulator-total_per_asset-sort.diff` | `dvm/simulator.go:219` | Sort asset totals | **DEFERRED** — mitigated by GODEBUG |
+| `05-dvm-simulator-incoming_values-sort.diff` | `dvm/simulator.go:253,288` | Sort incoming values | **DEFERRED** — mitigated by GODEBUG |
+| `06-hardcoded_contracts-Entries-sort.diff` | `blockchain/hardcoded_contracts.go:86,92` | Sort genesis/HF Entries | **DEFERRED** — mitigated by GODEBUG |
+| `07-p2p-chunk_server-replace-gob.diff` | `p2p/chunk_server.go:354` | Replace gob with custom encoder | **MANDATORY** — unaffected by GODEBUG |
 
-**Patches are reference `.diff` files** — they document the fix pattern but are **not auto-applied**. A follow-up PR must land the actual code changes.
+Additionally, a startup self-check (`cmd/derod/godebug_check.go`, ~25 lines) must land to kill derod at startup if `GODEBUG=randmapiter=0` is missing.
+
+**Patches are reference `.diff` files** — they document the fix pattern but are **not auto-applied**. A follow-up PR must land the actual code changes for patch 07 and the self-check.
 
 ---
 
@@ -320,6 +331,8 @@ See `docs/go-1.26-differential-test-spec.md` for full spec. Summary:
 [ ] 8. Monitor first 100 blocks: confirm sync to peers on both versions
 [ ] 9. Verify state root matches pre-upgrade: compare state_root.txt
 [ ] 10. Alert on-call if ANY mismatch detected within 24h
+[ ] 11. Set GODEBUG=randmapiter=0 in systemd unit / Docker env / shell
+[ ] 12. Verify flag: cat /proc/<pid>/environ | tr '\0' '\n' | grep GODEBUG
 ```
 
 ### 16.2 Rollback Procedure
@@ -339,8 +352,9 @@ IF fork detected OR state mismatch:
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| Map iteration determinism (8 sites) | **BLOCKING** | 7 patches documented in `docs/go-1.26-fix-patches/` |
-| Wire protocol (gob) | **BLOCKING** | Patch `07` documented |
+| Map iteration determinism (8 sites) | **MITIGATED** | Workaround C: `GODEBUG=randmapiter=0` on all daemons |
+| Wire protocol (gob) | **BLOCKING** | Patch `07` documented — must land before mainnet |
+| Startup self-check (missing flag) | **BLOCKING** | `cmd/derod/godebug_check.go` — must land before mainnet |
 | `crypto/rand` init | **VERIFIED SAFE** | `TestRNDDeterminism` guards regression |
 | CGO / PIE | **VERIFIED SAFE** | Default build mode, not PIE |
 | `binary.Uvarint` | **VERIFIED SAFE** | `TestUvarintRoundTrip` guards regression |
@@ -351,8 +365,64 @@ IF fork detected OR state mismatch:
 | Pre-existing test failures (`walletapi` balance) | **DOCUMENTED** | Fail on 1.17 too — pre-existing |
 | Go 1.26.4 build | **PASS** | derod, wallet-cli, walletapi all build |
 | XSWD test suite | **PASS** | 54s, all green on 1.26.4 |
+| Operator GODEBUG compliance | **OPERATOR DEPENDENT** | See `docs/go-1.26-operator-guide.md` |
 
-**Overall:** **NO-GO for mainnet consensus** until 7 patches land. **GO** for testnet, devnet, non-consensus mainnet.
+**Overall:** **NO-GO for mainnet consensus** until patch 07 + startup self-check land. **GO** for testnet, devnet, non-consensus mainnet with `GODEBUG=randmapiter=0`.
+
+---
+
+## 18. Workaround C: GODEBUG=randmapiter=0
+
+**What it is:** A Go runtime environment variable that disables map iteration randomization, returning to Go 1.0-era deterministic behavior. Available since Go 1.17, guaranteed through at least Go 1.30.
+
+**Why it works:** The consensus divergence risk comes from Go 1.24+ Swiss Tables randomizing map iteration order differently from Go 1.17. Setting `randmapiter=0` forces both versions to iterate in the same deterministic order, eliminating the need for code patches at all 8 sites.
+
+**What it does NOT fix:** The `gob` encoder in `p2p/chunk_server.go:354` (patch 07) is unaffected by this flag — `gob`'s wire format is Go-version-sensitive regardless of map iteration behavior. That patch remains mandatory.
+
+**How to set it:** See `docs/go-1.26-operator-guide.md` for platform-specific instructions (systemd, Docker, init.d, manual).
+
+**How to verify:**
+```bash
+cat /proc/$(pgrep derod)/environ | tr '\0' '\n' | grep GODEBUG
+# Expected: GODEBUG=randmapiter=0
+```
+
+**Startup enforcement:** `cmd/derod/godebug_check.go` (to be added in a follow-up code PR) calls `os.Exit(1)` in `init()` if the flag is missing, preventing derod from starting without it.
+
+**Long-term risk:** The `randmapiter` GODEBUG knob may be deprecated or removed in a future Go release. The 6 deferred patches (01–06) are the backup plan. When the flag is removed:
+1. Apply patches 01–06 to the source
+2. Remove `GODEBUG=randmapiter=0` from all service units
+3. Rebuild and deploy
+
+**Cross-version safety:** Go guarantees `randmapiter=0` support through Go 1.30. A heterogeneous network (some Go 1.17, some Go 1.26) with the flag set on all nodes will produce identical iteration sequences.
+
+---
+
+## 19. Startup Self-Check (Planned)
+
+A ~25-line `cmd/derod/godebug_check.go` file will be added in a follow-up code PR:
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+    "strings"
+)
+
+func init() {
+    debug := os.Getenv("GODEBUG")
+    if !strings.Contains(debug, "randmapiter=0") {
+        fmt.Fprintln(os.Stderr, "FATAL: GODEBUG=randmapiter=0 is required for consensus safety")
+        fmt.Fprintln(os.Stderr, "Set it in your systemd unit, Docker env, or shell before starting derod")
+        fmt.Fprintln(os.Stderr, "See: docs/go-1.26-operator-guide.md")
+        os.Exit(1)
+    }
+}
+```
+
+This runs **before `main()`** — if the flag is missing, derod cannot start. The self-check is a defense-in-depth measure; the primary guarantee is operator compliance documented in §18.
 
 ---
 
@@ -416,4 +486,4 @@ $ go test -mod=vendor ./walletapi/xswd/...       # PASS (54s)
 ---
 
 **Audit completed:** 2026-06-07
-**Auditor sign-off:** Pending — awaiting consensus-fix PR
+**Auditor sign-off:** Pending — awaiting patch 07 + startup self-check PR

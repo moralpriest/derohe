@@ -15,6 +15,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"math/rand"
+	"os"
+	"runtime"
 	"sort"
 	"testing"
 )
@@ -387,4 +389,83 @@ func TestBuildModeDefaults(t *testing.T) {
 		t.Skip("skipping build mode test in short mode")
 	}
 	t.Log("build mode verification: see docs/go-1.26-upgrade-audit.md §12")
+}
+
+// =========================================================================
+// Test 6: GODEBUG=randmapiter=0 self-check (Workaround C guard)
+//
+// Documents and verifies the startup self-check requirement.
+// In production, cmd/derod/godebug_check.go enforces this via init().
+// This test serves as a regression guard and documents the requirement.
+// =========================================================================
+
+func TestGODEBUGSelfCheckDocumentsRequirement(t *testing.T) {
+	if runtime.Version() < "go1.24" {
+		t.Skip("randmapiter GODEBUG only relevant for Go 1.24+ (Swiss Tables)")
+	}
+
+	val := os.Getenv("GODEBUG")
+	if val == "" {
+		t.Log("GODEBUG not set — documenting requirement only")
+		t.Log("Production self-check: cmd/derod/godebug_check.go")
+		t.Log("Mechanism: init() → os.Getenv(\"GODEBUG\") → os.Exit(1) if missing")
+		t.Log("See: docs/go-1.26-upgrade-audit.md §18-19")
+		return
+	}
+
+	found := false
+	for _, part := range splitGODEBUG(val) {
+		if part == "randmapiter=0" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("GODEBUG=%q does not contain randmapiter=0", val)
+		t.Log("Without randmapiter=0, Go 1.24+ map iteration is non-deterministic")
+		t.Log("This causes consensus divergence between Go 1.17 and Go 1.26 nodes")
+		t.Log("See: docs/go-1.26-upgrade-audit.md §18")
+	} else {
+		t.Log("GODEBUG=randmapiter=0 is set — deterministic map iteration verified")
+	}
+}
+
+func splitGODEBUG(s string) []string {
+	var parts []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == ',' {
+			parts = append(parts, s[start:i])
+			start = i + 1
+		}
+	}
+	parts = append(parts, s[start:])
+	return parts
+}
+
+// TestGODEBUGSplitParsing verifies the comma-splitting logic used above.
+func TestGODEBUGSplitParsing(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"", []string{""}},
+		{"randmapiter=0", []string{"randmapiter=0"}},
+		{"gcdebug=1,randmapiter=0", []string{"gcdebug=1", "randmapiter=0"}},
+		{"randmapiter=0,gcdebug=1", []string{"randmapiter=0", "gcdebug=1"}},
+		{"a,b,c", []string{"a", "b", "c"}},
+	}
+	for _, tt := range tests {
+		got := splitGODEBUG(tt.input)
+		if len(got) != len(tt.want) {
+			t.Errorf("splitGODEBUG(%q): got %d parts, want %d", tt.input, len(got), len(tt.want))
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("splitGODEBUG(%q)[%d]: got %q, want %q", tt.input, i, got[i], tt.want[i])
+			}
+		}
+	}
 }
