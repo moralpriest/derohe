@@ -59,7 +59,17 @@ func (w *Wallet_Memory) Transfer_Simplified(addr string, value uint64, data []by
 // we should reply to an entry
 
 // send amount to specific addresses
+// TransferPayload0 is preserved with its exact signature as a shim over
+// TransferPayload0WithOptions, so all existing callers keep compiling and get
+// today's behavior (honest attribution, random ring selection).
 func (w *Wallet_Memory) TransferPayload0(transfers []rpc.Transfer, ringsize uint64, transfer_all bool, scdata rpc.Arguments, gasstorage uint64, dry_run bool) (tx *transaction.Transaction, err error) {
+	return w.TransferPayload0WithOptions(transfers, ringsize, transfer_all, scdata, gasstorage, dry_run, TransferOptions{})
+}
+
+// TransferPayload0WithOptions is the additive variant carrying opt-in transfer
+// privacy knobs (sender-attribution mode, decoy curation). A zero-value
+// TransferOptions reproduces TransferPayload0 exactly.
+func (w *Wallet_Memory) TransferPayload0WithOptions(transfers []rpc.Transfer, ringsize uint64, transfer_all bool, scdata rpc.Arguments, gasstorage uint64, dry_run bool, opts TransferOptions) (tx *transaction.Transaction, err error) {
 
 	//    var  transfer_details structures.Outgoing_Transfer_Details
 	w.transfer_mutex.Lock()
@@ -395,7 +405,7 @@ func (w *Wallet_Memory) TransferPayload0(transfers []rpc.Transfer, ringsize uint
 	max_bits += 6 // extra 6 bits
 
 	if !dry_run {
-		tx = w.BuildTransaction(transfers, rings_balances, rings, block_hash, height, scdata, treehash_raw, max_bits, gasstorage)
+		tx = w.buildTransaction(transfers, rings_balances, rings, block_hash, height, scdata, treehash_raw, max_bits, gasstorage, opts)
 	}
 
 	if tx == nil {
