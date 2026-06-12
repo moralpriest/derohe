@@ -66,6 +66,58 @@ func (w *Wallet_Memory) TransferPayload0(transfers []rpc.Transfer, ringsize uint
 	return w.TransferPayload0WithOptions(transfers, ringsize, transfer_all, scdata, gasstorage, dry_run, TransferOptions{})
 }
 
+// curatedRingCandidates returns an ordered list of candidate ring members:
+// validated preferred decoys first, then the daemon's random members. With a nil
+// RingPreference it returns exactly Random_ring_members(scid) — today's behavior.
+//
+// A preferred decoy is validated to be parseable, not the wallet's own address, not a
+// duplicate, and registered on the BASE (zero-SCID) balance tree. The base tree is the
+// one the consensus verifier falls back to for ring membership, so probing it (rather
+// than the transfer's SCID tree) prevents a curated decoy that passes the wallet but
+// then rejects at consensus after the user has signed. In Strict mode a bad decoy is a
+// hard error; otherwise it is skipped and random members fill the slot.
+func (w *Wallet_Memory) curatedRingCandidates(scid crypto.Hash, pref *RingPreference) (alist []string, err error) {
+	if pref == nil {
+		return w.Random_ring_members(scid), nil
+	}
+
+	var zeroscid crypto.Hash
+	self := w.GetAddress().String()
+	seen := map[string]bool{self: true}
+
+	for _, d := range pref.PreferredDecoys {
+		if _, e := rpc.NewAddress(d); e != nil { // must be a parseable address
+			if pref.Strict {
+				return nil, fmt.Errorf("preferred decoy is not a valid address: %s", d)
+			}
+			continue
+		}
+		if d == self { // curating your own address collapses your anonymity set
+			if pref.Strict {
+				return nil, fmt.Errorf("preferred decoy cannot be your own address")
+			}
+			continue
+		}
+		if seen[d] { // distinctness (consensus rejects duplicate ring members)
+			if pref.Strict {
+				return nil, fmt.Errorf("duplicate preferred decoy: %s", d)
+			}
+			continue
+		}
+		// registration: probe the BASE balance tree, the tree consensus checks against.
+		if _, _, _, _, e := w.GetEncryptedBalanceAtTopoHeight(zeroscid, -1, d); e != nil {
+			if pref.Strict {
+				return nil, fmt.Errorf("preferred decoy is not registered: %s", d)
+			}
+			continue
+		}
+		seen[d] = true
+		alist = append(alist, d)
+	}
+
+	return append(alist, w.Random_ring_members(scid)...), nil
+}
+
 // TransferPayload0WithOptions is the additive variant carrying opt-in transfer
 // privacy knobs (sender-attribution mode, decoy curation). A zero-value
 // TransferOptions reproduces TransferPayload0 exactly.
@@ -348,10 +400,21 @@ func (w *Wallet_Memory) TransferPayload0WithOptions(transfers []rpc.Transfer, ri
 		deduplicator[w.GetAddress().String()] = true
 
 		for ringsize != 2 {
-			probable_members := w.Random_ring_members(transfers[t].SCID)
+			// curated preferred decoys (if any) go first; random members top up. With no
+			// RingPreference this returns exactly Random_ring_members(transfers[t].SCID).
+			probable_members, cerr := w.curatedRingCandidates(transfers[t].SCID, opts.Ring)
+			if cerr != nil {
+				err = cerr
+				return
+			}
 			if len(probable_members) <= 40 { // we do not have enough ring members for sure, extract ring members from base
 				var zeroscid crypto.Hash
-				probable_members = w.Random_ring_members(zeroscid)
+				base_members, berr := w.curatedRingCandidates(zeroscid, opts.Ring)
+				if berr != nil {
+					err = berr
+					return
+				}
+				probable_members = base_members
 			}
 			for _, k := range probable_members {
 				if _, collision := deduplicator[k]; collision {
