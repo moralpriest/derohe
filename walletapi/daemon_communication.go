@@ -1071,7 +1071,7 @@ func (w *Wallet_Memory) synchistory_block(scid crypto.Hash, topo int64) (err err
 									}
 								}
 
-								if sender_idx <= uint(tx.Payloads[t].Statement.RingSize) {
+								if sender_idx < uint(tx.Payloads[t].Statement.RingSize) { // off-by-one fix: valid indices are 0..RingSize-1
 									addr := rpc.NewAddressFromKeys((*crypto.Point)(tx.Payloads[t].Statement.Publickeylist[sender_idx]))
 									addr.Mainnet = w.GetNetwork()
 									entry.Sender = addr.String()
@@ -1110,7 +1110,7 @@ func (w *Wallet_Memory) synchistory_block(scid crypto.Hash, topo int64) (err err
 									}
 								}
 
-								if sender_idx <= uint(tx.Payloads[t].Statement.RingSize) {
+								if sender_idx < uint(tx.Payloads[t].Statement.RingSize) { // off-by-one fix: valid indices are 0..RingSize-1
 									addr := rpc.NewAddressFromKeys((*crypto.Point)(tx.Payloads[t].Statement.Publickeylist[sender_idx]))
 									addr.Mainnet = w.GetNetwork()
 									entry.Sender = addr.String()
