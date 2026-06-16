@@ -153,6 +153,14 @@ func (w *Wallet_Memory) TokenAdd(scid crypto.Hash) (err error) {
 	w.Lock()
 	defer w.Unlock()
 
+	// Guard against a nil map on a freshly created/restored, not-yet-synced
+	// wallet (EntriesNative is populated lazily during sync). Without this the
+	// assignment below panics with "assignment to entry in nil map". Mirrors the
+	// guard already present in InsertReplace.
+	if w.account.EntriesNative == nil {
+		w.account.EntriesNative = map[crypto.Hash][]rpc.Entry{}
+	}
+
 	if _, ok := w.account.EntriesNative[scid]; !ok {
 		w.account.EntriesNative[scid] = []rpc.Entry{}
 	} else {
