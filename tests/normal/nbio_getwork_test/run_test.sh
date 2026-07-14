@@ -8,6 +8,11 @@
 # getwork server, so this standalone test is the only one that covers the bumped nbio
 # code path in production conditions.
 #
+# When run under run_integration_test.sh, this test starts its OWN derod
+# (the harness simulator does not start the getwork server) and uses dedicated,
+# non-default ports so it never collides with the harness simulator (20000/8080)
+# or the persistent dev daemon (10100/10102).
+#
 # Usage: bash tests/normal/nbio_getwork_test/run_test.sh
 
 set -u
@@ -27,20 +32,20 @@ DEROD_LOG=/tmp/nbio_getwork_derod.log
 MINER_LOG=/tmp/nbio_getwork_miner.log
 
 cleanup() {
-  pkill -f "/tmp/derod --testnet" 2>/dev/null
-  pkill -f "/tmp/dero-miner" 2>/dev/null
+  pkill -f "/tmp/nbio_derod" 2>/dev/null
+  pkill -f "/tmp/nbio_miner" 2>/dev/null
   rm -rf "$DATADIR" "$DEROD_LOG" "$MINER_LOG"
 }
 trap cleanup EXIT
 
 echo "==> Building derod + dero-miner"
-go build -o /tmp/derod ./cmd/derod || { echo "FAIL: derod build"; exit 1; }
-go build -o /tmp/dero-miner ./cmd/dero-miner || { echo "FAIL: dero-miner build"; exit 1; }
+go build -o /tmp/nbio_derod ./cmd/derod || { echo "FAIL: derod build"; exit 1; }
+go build -o /tmp/nbio_miner ./cmd/dero-miner || { echo "FAIL: dero-miner build"; exit 1; }
 
-echo "==> Starting derod --testnet (getwork on 127.0.0.1:$GETWORK_PORT)"
+echo "==> Starting derod --testnet (getwork on 127.0.0.1:$GETWORK_PORT, rpc 18093, p2p disabled)"
 rm -rf "$DATADIR"
 mkdir -p "$DATADIR"
-/tmp/derod --testnet --data-dir="$DATADIR" --getwork-bind="127.0.0.1:$GETWORK_PORT" --clog-level=2 >"$DEROD_LOG" 2>&1 &
+/tmp/nbio_derod --testnet --data-dir="$DATADIR" --rpc-bind="127.0.0.1:18093" --p2p-bind=":0" --getwork-bind="127.0.0.1:$GETWORK_PORT" --clog-level=2 >"$DEROD_LOG" 2>&1 &
 disown
 
 echo "==> Waiting for getwork server to start"
@@ -60,7 +65,7 @@ fi
 echo "    getwork server started"
 
 echo "==> Starting dero-miner (gorilla/websocket client -> nbio server)"
-/tmp/dero-miner --testnet --daemon-rpc-address="127.0.0.1:$GETWORK_PORT" --wallet-address="$ADDRESS" >"$MINER_LOG" 2>&1 &
+/tmp/nbio_miner --testnet --daemon-rpc-address="127.0.0.1:$GETWORK_PORT" --wallet-address="$ADDRESS" >"$MINER_LOG" 2>&1 &
 disown
 
 echo "==> Waiting for miner to connect and receive a job"
