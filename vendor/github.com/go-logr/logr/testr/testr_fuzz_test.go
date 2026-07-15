@@ -1,5 +1,8 @@
+//go:build go1.18
+// +build go1.18
+
 /*
-Copyright 2020 The logr Authors.
+Copyright 2022 The logr Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,11 +17,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package logr
+package testr
 
-// Discard returns a Logger that discards all messages logged to it.  It can be
-// used whenever the caller is not interested in the logs.  Logger instances
-// produced by this function always compare as equal.
-func Discard() Logger {
-	return New(nil)
+import "testing"
+
+func TestLoggerTestingF(t *testing.T) {
+	f := &testing.F{}
+	_ = NewWithInterface(f, Options{})
 }
