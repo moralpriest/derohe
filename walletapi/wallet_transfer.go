@@ -369,7 +369,9 @@ func (w *Wallet_Memory) TransferPayload0WithOptions(transfers []rpc.Transfer, ri
 				}
 			}
 
-			return
+			if err != nil {
+				return
+			}
 		}
 
 		var dest_e *crypto.ElGamal
