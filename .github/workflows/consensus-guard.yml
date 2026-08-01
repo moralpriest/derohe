@@ -12,7 +12,7 @@ name: consensus-guard
 on:
   pull_request:
   push:
-    branches: [experimental]
+    branches: ['**']
   workflow_dispatch:
 
 jobs:
