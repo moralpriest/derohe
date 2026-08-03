@@ -40,8 +40,13 @@ const (
 	// anonymity set, never the real sender or receiver). The receiver is reduced to the
 	// ring's 1-of-N anonymity instead of being handed the sender's slot directly.
 	AttributionAnonymous
-	// A "point attribution at a specific named address" mode is intentionally NOT defined:
-	// that is targeted impersonation, not privacy.
+	// Naming a SPECIFIC address as the apparent sender is deliberately not an
+	// AttributionMode value: the attribution-rotation engine drives this enum and must
+	// never be able to reach a targeted attribution by accident. That is a containment
+	// decision about THIS enum, not a judgment that the capability is off the table — if
+	// it ships, it ships as a separate opt-in field, with the receiver-export scrub as
+	// its privacy floor (at ring > 2 the exported entry is blanked, so a sender-chosen
+	// attribution can never be republished as a verified accusation).
 )
 
 // RingPreference is an opt-in decoy-curation hint for ring assembly. A nil
