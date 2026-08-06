@@ -531,12 +531,12 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 	}
 
 	// verify that the clock is not being run in reverse
-	// the block timestamp cannot be less than any of the parents
+	// the block timestamp cannot be less than or equal to any of its parents' timestamp
 	for i := range bl.Tips {
-		if chain.Load_Block_Timestamp(bl.Tips[i]) > bl.Timestamp {
+		if chain.Load_Block_Timestamp(bl.Tips[i]) >= bl.Timestamp {
 			//fmt.Printf("timestamp prev %d  cur timestamp %d\n", chain.Load_Block_Timestamp(bl.Tips[i]), bl.Timestamp)
 
-			block_logger.Error(fmt.Errorf("Block timestamp is  less than its parent."), "rejecting block")
+			block_logger.Error(fmt.Errorf("Block timestamp is less than or equal to its parent."), "rejecting block")
 			return errormsg.ErrInvalidTimestamp, false
 		}
 	}
@@ -666,9 +666,32 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 		}
 	}
 
-	// another check, whether the block contains any duplicate registration within the block
+	// another check, whether the block contains any duplicate or existing registration within the block
 	// block wide duplicate input detector
 	{
+		var balance_tree *graviton.Tree
+		var ss *graviton.Snapshot
+
+		bl_current := cbl.Bl
+
+		if bl_current.Height == 0 {
+			if ss, err = chain.Store.Balance_store.LoadSnapshot(0); err != nil {
+				panic(err)
+			}
+		} else {
+			record_version, err := chain.ReadBlockSnapshotVersion(bl.Tips[0])
+			if err != nil {
+				panic(err)
+			}
+			ss, err = chain.Store.Balance_store.LoadSnapshot(record_version)
+			if err != nil {
+				panic(err)
+			}
+		}
+		if balance_tree, err = ss.GetTree(config.BALANCE_TREE); err != nil {
+			panic(err)
+		}
+
 		reg_map := map[string]bool{}
 		for i := 0; i < len(cbl.Txs); i++ {
 
@@ -682,6 +705,12 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 				if chain.simulator == false && tx_hash[0] != 0 && tx_hash[1] != 0 {
 					return fmt.Errorf("Registration TX has not solved PoW"), false
 				}
+
+				if _, err = balance_tree.Get(cbl.Txs[i].MinerAddress[:]); err == nil {
+					block_logger.Error(fmt.Errorf("Registration TX already exists"), "registration already exists", "txid", cbl.Txs[i].GetHash())
+					return errormsg.ErrAlreadyExists, false
+				}
+
 				reg_map[string(cbl.Txs[i].MinerAddress[:])] = true
 			}
 		}
@@ -834,7 +863,24 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 	// we need to do more checks but only after tx has been expanded
 	{
 		var check_data cbl_verify // used to verify sanity of new block
+
+		bl_current := cbl.Bl
+		height_current := chain.Calculate_Height_At_Tips(bl_current.Tips)
+		hard_fork_version_current := chain.Get_Current_Version_at_Height(height_current)
+
 		for i := 0; i < len(cbl.Txs); i++ {
+			// check whether enough fees is provided in the transaction
+			switch cbl.Txs[i].TransactionType {
+			case transaction.NORMAL, transaction.BURN_TX, transaction.SC_TX:
+				calculated_fee := chain.Calculate_TX_fee(hard_fork_version_current, uint64(len(cbl.Txs[i].Serialize())))
+				provided_fee := cbl.Txs[i].Fees() // get fee from tx
+				if !chain.simulator && calculated_fee > provided_fee {
+					block_logger.Error(fmt.Errorf("TX rejected due to low fees (calculated %d, provided %d)", calculated_fee, provided_fee), "TX verification failed", "txid", cbl.Txs[i].GetHash())
+					return errormsg.ErrInvalidTX, false
+				}
+			default:
+			}
+
 			if !(cbl.Txs[i].IsCoinbase() || cbl.Txs[i].IsRegistration()) { // all other tx must go through this check
 				if err = check_data.check(cbl.Txs[i], false); err == nil {
 					check_data.check(cbl.Txs[i], true) // keep in record for future tx
