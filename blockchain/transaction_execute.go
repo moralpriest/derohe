@@ -42,6 +42,11 @@ import "github.com/deroproject/graviton"
 const RewardReductionInterval = 210000 * 600 / config.BLOCK_TIME // 210000 comes from bitcoin
 const BaseReward = (41 * 100000 * config.BLOCK_TIME) / 600       // convert bitcoin reward system to our block
 
+// SimulatorRegistrationBalance is the deterministic starting balance assigned
+// to newly registered testnet/simulator accounts. Keeping it named lets tests
+// assert transfer arithmetic without duplicating a consensus test fixture.
+const SimulatorRegistrationBalance uint64 = 100000000
+
 // CalcBlockSubsidy returns the subsidy amount a block at the provided height
 // should have. This is mainly used for determining how much the coinbase for
 // newly generated blocks awards as well as validating the coinbase for blocks
@@ -183,7 +188,7 @@ func (chain *Blockchain) process_transaction(changed map[crypto.Hash]*graviton.T
 		zerobalance := crypto.ConstructElGamal(acckey.G1(), crypto.ElGamal_BASE_G)
 
 		if !globals.IsMainnet() || chain.simulator { // give testnet users a dummy amount to play
-			zerobalance = zerobalance.Plus(new(big.Int).SetUint64(100000000)) // add fix amount to every wallet to users balance for more testing
+			zerobalance = zerobalance.Plus(new(big.Int).SetUint64(SimulatorRegistrationBalance)) // add fixed amount to every wallet for testing
 		}
 
 		// give new wallets generated in initial month a balance
