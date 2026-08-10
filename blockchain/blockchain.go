@@ -993,7 +993,7 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 					}
 					for t := range tx.Payloads {
 						if !tx.Payloads[t].SCID.IsZero() {
-							if _, ok := sc_change_cache[tx.Payloads[t].SCID]; !ok {
+							if _, ok := sc_change_cache[tx.Payloads[t].SCID]; !ok || bl_current.Height < uint64(globals.Config.MAJOR_HF3_HEIGHT) {
 								tree, _ := ss.GetTree(string(tx.Payloads[t].SCID[:]))
 								sc_change_cache[tx.Payloads[t].SCID] = tree
 							}
