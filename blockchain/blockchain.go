@@ -704,9 +704,11 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 					return fmt.Errorf("Registration TX has not solved PoW"), false
 				}
 
-				if _, err = balance_tree.Get(cbl.Txs[i].MinerAddress[:]); err == nil {
-					block_logger.Error(fmt.Errorf("Registration TX already exists"), "registration already exists", "txid", cbl.Txs[i].GetHash())
-					return errormsg.ErrAlreadyExists, false
+				if bl.Height >= uint64(globals.Config.MAJOR_HF3_HEIGHT) {
+					if _, err = balance_tree.Get(cbl.Txs[i].MinerAddress[:]); err == nil {
+						block_logger.Error(fmt.Errorf("Registration TX already exists"), "registration already exists", "txid", cbl.Txs[i].GetHash())
+						return errormsg.ErrAlreadyExists, false
+					}
 				}
 
 				reg_map[string(cbl.Txs[i].MinerAddress[:])] = true
