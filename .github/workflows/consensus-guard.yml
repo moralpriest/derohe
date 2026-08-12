@@ -10,6 +10,13 @@ name: consensus-guard
 # Add_Complete_Block. A change there can leave a node whose state differs from
 # the network's while every validity check still passes.
 #
+# vendor/ is deliberately NOT guarded: dependency bumps are ordinary fork
+# maintenance and should not need a guard edit. Know what that costs. p2p
+# compiles against vendored libraries — kcp-go is the transport — so a vendored
+# change can alter how this node behaves on the network while this check stays
+# green. A green check means the guarded source matches upstream, not that the
+# built binary does.
+#
 # The check is a STATE check, not a diff-of-this-PR check: it asserts the
 # consensus tree is identical to upstream's. Merging upstream therefore always
 # passes; only a local edit to a consensus path can fail it.
