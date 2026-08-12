@@ -230,7 +230,7 @@ func (chain *Blockchain) verify_Transaction_NonCoinbase_internal(skip_proof bool
 
 	// apply HF3 fixes: add TX to cache
 	if t, ok := HF3_Affected_Txs[tx_hash.String()]; ok {
-		transaction_valid_cache.Store(tx_hash, time.Now())
+		transaction_valid_cache.Store(crypto.Keccak256(tx.Serialize()), time.Now())
 
 		tips_string := tx_hash.String()
 		tips_string += fmt.Sprintf("%s", t.Bl_Tips)

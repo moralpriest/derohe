@@ -352,8 +352,9 @@ func (connection *Connection) process_object_response(response Objects, sent int
 
 			// apply HF3 fixes to allow stuck nodes to catch up
 			if bl.Height < uint64(globals.Config.MAJOR_HF3_HEIGHT) {
-				if _, ok := blockchain.HF3_Affected_Txs[tx.GetHash().String()]; ok {
+				if t, ok := blockchain.HF3_Affected_Txs[tx.GetHash().String()]; ok {
 					chain.Verify_Transaction_NonCoinbase(&tx)
+					t.Parity = (bl.Height > t.Height) == t.Tx_Parity
 				}
 			}
 		}

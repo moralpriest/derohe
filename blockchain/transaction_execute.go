@@ -242,7 +242,7 @@ func (chain *Blockchain) process_transaction(changed map[crypto.Hash]*graviton.T
 
 				// apply HF3 fixes: use reverse parity
 				if t, ok := HF3_Affected_Txs[tx.GetHash().String()]; ok {
-					parity = !t.Tx_Parity
+					parity = t.Parity
 				}
 
 				if (i%2 == 0) == parity { // this condition is well thought out and works good enough
@@ -250,14 +250,6 @@ func (chain *Blockchain) process_transaction(changed map[crypto.Hash]*graviton.T
 				}
 				tree.Put(key_compressed, nb.Serialize()) // reserialize and store
 
-			}
-		}
-
-		// apply HF3 fixes: store parity for next tx occurrence
-		if t, ok := HF3_Affected_Txs[tx.GetHash().String()]; ok {
-			if !t.Changed {
-				t.Tx_Parity = !t.Tx_Parity
-				t.Changed = true
 			}
 		}
 
