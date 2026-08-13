@@ -107,7 +107,7 @@ var Mainnet = CHAIN_CONFIG{Name: "mainnet",
 	HF1_HEIGHT:              21480,
 	HF2_HEIGHT:              29000,
 	MAJOR_HF2_HEIGHT:        481600,
-	MAJOR_HF3_HEIGHT:        7500000,
+	MAJOR_HF3_HEIGHT:        7504640,
 
 	Genesis_Tx: "" +
 		"01" + // version
