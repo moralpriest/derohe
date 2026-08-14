@@ -230,7 +230,7 @@ func (chain *Blockchain) verify_Transaction_NonCoinbase_internal(skip_proof bool
 
 	// apply HF3 fixes: add TX to cache
 	if t, ok := HF3_Affected_Txs[tx_hash.String()]; ok {
-		transaction_valid_cache.Store(crypto.Keccak256(tx.Serialize()), time.Now())
+		transaction_valid_cache.Store(tx_hash, time.Now())
 
 		tips_string := tx_hash.String()
 		tips_string += fmt.Sprintf("%s", t.Bl_Tips)
@@ -430,7 +430,12 @@ func (chain *Blockchain) verify_Transaction_NonCoinbase_internal(skip_proof bool
 		}
 	}
 
-	if _, ok := transaction_valid_cache.Load(crypto.Keccak256(tx.Serialize())); ok {
+	tx_cache := tx_hash
+	if tx.Height >= uint64(globals.Config.MAJOR_HF3_HEIGHT) {
+		tx_cache = crypto.Keccak256(tx.Serialize())
+	}
+
+	if _, ok := transaction_valid_cache.Load(tx_cache); ok {
 		logger.V(2).Info("Found in cache, skipping verification", "txid", tx_hash)
 		return nil
 	} else {
@@ -459,7 +464,7 @@ func (chain *Blockchain) verify_Transaction_NonCoinbase_internal(skip_proof bool
 	// these transactions are done
 	if tx.TransactionType == transaction.NORMAL || tx.TransactionType == transaction.BURN_TX || tx.TransactionType == transaction.SC_TX {
 		if chain.cache_enabled {
-			transaction_valid_cache.Store(crypto.Keccak256(tx.Serialize()), time.Now()) // signature got verified, cache it
+			transaction_valid_cache.Store(tx_cache, time.Now()) // signature got verified, cache it
 		}
 
 		return nil

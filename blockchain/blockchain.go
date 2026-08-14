@@ -661,6 +661,15 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 				block_logger.Error(fmt.Errorf("Missing TX"), "TX missing", "txid", tx_hash.String())
 				return errormsg.ErrInvalidBlock, false
 			}
+			// Hark-Fork 3: check if TX is already stored
+			if bl.Height >= uint64(globals.Config.MAJOR_HF3_HEIGHT) {
+				if tx_data, err := chain.Store.Block_tx_store.ReadTX(tx_hash); err == nil {
+					if !bytes.Equal(tx_data, cbl.Txs[i].Serialize()) {
+						block_logger.Error(fmt.Errorf("TX data mismatch"), "Duplicate TX", "txid", tx_hash.String())
+						return errormsg.ErrInvalidBlock, false
+					}
+				}
+			}
 		}
 	}
 
