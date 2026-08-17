@@ -26,6 +26,11 @@ type HF3_Tx_Data struct {
 
 var HF3_Affected_Txs = map[string]*HF3_Tx_Data{
 	// duplicates
+	"d856184d636c3ef8545979c902df15d6a1bf41b4a4b81d81762f519a6acfb689": {Bl_Tips: "02f90ab6db4280f047d7e4a8478306b65fa6739cabceccac3853f7201b2cc55c", Height: 7483355, Tx_Parity: false},
+	"3ccf648db6d26295d68ec1c88cdc736a10caa35ad83b856cb9bb304f893c5043": {Bl_Tips: "347719f73c23aa79e24bee5895a11368eac46dc7044e5e6fb0c92a70faf2553e", Height: 7483214, Tx_Parity: false},
+	"6aa20567ff23705aa91a4c607e8387d147b309f8eeb9f8198149c21c439c3692": {Bl_Tips: "e4d918937e0b60df9febe33e634378a5004334e9c3e794729a807ed7ed6e86b9", Height: 7482968, Tx_Parity: false},
+	"9becfdff8e750fcd741f240ae701ca134fd54b1c3d1db9dbf9f0254f5a794046": {Bl_Tips: "af864f8ad0ef0af0ce83135f156206bbc5ff0f70ca8fe795001f996f5be94e96", Height: 7482959, Tx_Parity: false},
+	"e42eb301e2f0863de346ada3a531cdf70ca224a90dae2e861a21407a0c76bfc5": {Bl_Tips: "1a2cda8acf4e859047db158c0b20d307d67c533e828cdc4704a07e6950ce29bb", Height: 7482913, Tx_Parity: false},
 	"364538c7073f9c5e3b99eeec33a9bfb830a5d3d0cefb6c44d63b22b90c82a655": {Bl_Tips: "3c24d98c0536e8b65de498b4c61c4d080e6a8be94ebe78ebd4f37b23097c0ea1", Height: 7471828, Tx_Parity: false},
 	"e0a6f89071b89ee8f479845399e78c17d31f3dbc8e1c4370e22ec5a4fcd214bc": {Bl_Tips: "39f20e679fb8a527f907a95d58d27c4e6e9ea088885905142919db4b854e4051", Height: 7471775, Tx_Parity: false},
 	"879f99d24bde3eaadd0ee348d3eef5e61b13b11bc9ab7c554ef6fc1a679b7de6": {Bl_Tips: "dadc95b874c626a15a4f6c382193c24b39ff3314f4f68fe10ea82aba4c186fc9", Height: 7471414, Tx_Parity: false},
