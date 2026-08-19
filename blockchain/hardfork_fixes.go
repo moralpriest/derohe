@@ -26,6 +26,19 @@ type HF3_Tx_Data struct {
 
 var HF3_Affected_Txs = map[string]*HF3_Tx_Data{
 	// duplicates
+	"5a14d8516288648133b8cea98afa1b9a2f783a3ea345b191e57d388b64ca5ecf": {Bl_Tips: "ef130ee06f79e725865b1a9e5d58b0a6098864e69aa0af4e43127e198cd090ee", Height: 7494167, Tx_Parity: false},
+	"85d52fe6f310f4af1d11611ef3577d477b76af3c0d050e2f4493e16822f68a18": {Bl_Tips: "d3210f571204b409aadaafa7499588f7f246fa497bf10614bb4f974019ca87f0", Height: 7494011, Tx_Parity: false},
+	"211082955f1fda468ba0cd604e14dc5d84f4eb096f3c349f4ad05757c979dce6": {Bl_Tips: "bf1280155b858b7a403b6a8d26dfa7237952bace4cf9a94d48246071d5381901", Height: 7493898, Tx_Parity: false},
+	"e5676c4e2cc98429c890a30bdc1db231935dd52c91d17aa077a24a87a2dc35f9": {Bl_Tips: "57fda89bcd8ad8983fd53b1ebafe1ce7ead4cbc40e3ae1ceaaffc4aa9ea56a9a", Height: 7493786, Tx_Parity: false},
+	"17cd5710eee2cb27cdb1a68dfe63e955260ea8dc3e59e234a20bed14cb409970": {Bl_Tips: "121f3c4aff47b3c3fdbda52e8116b0c210b0fbe06f2b2b87a498c42be3b033eb", Height: 7493772, Tx_Parity: false},
+	"ed09fcce52484862a01fcb0e03d6799ba16d7304e4b0af1d60cde4ce399c1207": {Bl_Tips: "83e423fe2303e25f90fa4d1912dbfe497ed4096f7d5bdbd111f38831ff6559ef", Height: 7493752, Tx_Parity: false},
+	"ba3834ef15b7d714836e9944c46c8795066b328ff678c5cc44c7cdf0a3fa5ebd": {Bl_Tips: "0a0e7920c5fd35e6895308e366dbf9c667e8238acba1ca1ebc775b53eec71816", Height: 7493682, Tx_Parity: false},
+	"74b79178426990bcd071cd26829900027e78b6d36e77b57e050a0bba4398ed1f": {Bl_Tips: "b72aa95008574be787ab54c3de4dcc8f6a2d59c5308d2af9d38c18dc6b6b37c0", Height: 7493663, Tx_Parity: false},
+	"1eb43df8ab1abd8934c74cc0d08b5d9fef02604ca6500a7cf947d263b882cafe": {Bl_Tips: "4f6566c637ca408db43bdffa25cc5712c647008666e6f96e1059cdf537da4096", Height: 7493600, Tx_Parity: false},
+	"9eba39af652ee2a0d4835d964cffcd0be4ac6f103138e87c80953902e4ce0026": {Bl_Tips: "d77f83002ffa6188ba6f9f52a146a98ce1ba71669184064df1267b00c8f6fceb", Height: 7493588, Tx_Parity: false},
+	"fd79549ad416cbec243d9ce54014b26f888f1cfd0cfe1aed5dde978a11dcaeab": {Bl_Tips: "0367639c4b51df469a494d0c70f73e9048ceeca15b89256b8264f3b52854e6f7", Height: 7493549, Tx_Parity: false},
+	"b43be6528061e4eb1ca6e7bcfcd419e42839bbeec5cdcbf7e664be2fd501dad2": {Bl_Tips: "e3b1a06c2a71c030378c4e4c2b97b5a65e087013d9f7e6fe2dd1e0a5d014d551", Height: 7493246, Tx_Parity: false},
+	"bba77f85c72d2b896e1fca1e39327a3a57eca4d722326a524db2042df04766ee": {Bl_Tips: "25e5cceb174d7887a80a4b1105733a29a7878872d18143ed62f05261d766c768", Height: 7493238, Tx_Parity: false},
 	"d856184d636c3ef8545979c902df15d6a1bf41b4a4b81d81762f519a6acfb689": {Bl_Tips: "02f90ab6db4280f047d7e4a8478306b65fa6739cabceccac3853f7201b2cc55c", Height: 7483355, Tx_Parity: false},
 	"3ccf648db6d26295d68ec1c88cdc736a10caa35ad83b856cb9bb304f893c5043": {Bl_Tips: "347719f73c23aa79e24bee5895a11368eac46dc7044e5e6fb0c92a70faf2553e", Height: 7483214, Tx_Parity: false},
 	"6aa20567ff23705aa91a4c607e8387d147b309f8eeb9f8198149c21c439c3692": {Bl_Tips: "e4d918937e0b60df9febe33e634378a5004334e9c3e794729a807ed7ed6e86b9", Height: 7482968, Tx_Parity: false},
@@ -71,6 +84,7 @@ var HF3_Affected_Txs = map[string]*HF3_Tx_Data{
 	"42f2876c90522812085556e7f6e0f51ef7edd84f1f99fba48acc84b52321f30d": {Bl_Tips: "666781d7bf175b9c68d12a1e333919183181962e4cd54da9a6aaac89eb88d640", Height: 7416808, Tx_Parity: true},
 	"0e75ae6662c08627470a7ea97d2115830f2b0e392efdba3c58ace068adc99aa6": {Bl_Tips: "0019bc7841d11b6ad03acc17eec89aa955d3b295333bbd08922ecdf45bab6ce8", Height: 7415466, Tx_Parity: true},
 	// no duplicates, but false parity
+	"aa0faf67a2856ee30ed4e275c1079d1572b1bcb03d4a9ca682bd825e11d81a43": {Bl_Tips: "af22f9348daf8f0003cbff5957e483508daa6e620b655067c0ff09257f554d70", Height: 7493552, Tx_Parity: false},
 	"37df76020e1823aade3b130fe53571b93d6c5c34e35d1d522c7c5cd449e84370": {Bl_Tips: "50e2b45fb23f9065eab78a33918176362bb2ff8d553097dd74bfaf870a89f808", Height: 7471805, Tx_Parity: false},
 	"09d0260ea572349c4869b58cb59638348e1ed4bc57c511619d36fd1fd484211f": {Bl_Tips: "917fe2096d98cf8fb6b54fa3b9fd6762897f7eec12a2f7af5248ed30d22c8a88", Height: 7470943, Tx_Parity: false},
 	"6d882984bad971d4becb9ac15ecd8cb3e3e0ee783d6d6c1d1ce95df12625732f": {Bl_Tips: "d36dab52c122c5e21e8a25a07eca92098cf5a62c13835cb1eead7dde7921f907", Height: 7470465, Tx_Parity: true},
