@@ -29,7 +29,6 @@ import "sync/atomic"
 import "context"
 import "strings"
 import "runtime/debug"
-import "encoding/json"
 
 import "github.com/deroproject/derohe/config"
 import "github.com/deroproject/derohe/globals"
@@ -64,9 +63,9 @@ var logger logr.Logger
 
 var client_connections sync.Map
 
-var options = &jrpc2.ServerOptions{AllowPush: true, RPCLog: metrics_generator{}, DecodeContext: func(ctx context.Context, method string, param json.RawMessage) (context.Context, json.RawMessage, error) {
+var options = &jrpc2.ServerOptions{AllowPush: true, RPCLog: metrics_generator{}, NewContext: func() context.Context {
 	t := time.Now()
-	return context.WithValue(ctx, "start_time", &t), param, nil
+	return context.WithValue(context.Background(), "start_time", &t)
 }}
 
 type metrics_generator struct{}
