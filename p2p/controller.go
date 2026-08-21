@@ -707,8 +707,8 @@ func process_outgoing_connection(conn net.Conn, tlsconn net.Conn, remote_addr ne
 // shutdown the p2p component
 func P2P_Shutdown() {
 	close(Exit_Event) // send signal to all connections to exit
-	save_peer_list() // save peer list
-	save_ban_list()  // save ban list
+	save_peer_list()  // save peer list
+	save_ban_list()   // save ban list
 
 	// TODO we  must wait for connections to kill themselves
 	logger.Info("P2P Shutdown")
