@@ -14,6 +14,10 @@ permissions: read-all
 env:
   GO_VERSION: "1.26"
 
+concurrency:
+  group: node-assurance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   reproducible-build:
     name: Reproducible Build Verification
@@ -68,7 +72,7 @@ jobs:
     name: Cryptographic Hygiene Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true # Advisory while findings are triaged and documented
+    continue-on-error: true # Advisory; flip to blocking once findings are triaged (target 2026-10-01)
     permissions:
       contents: read
     steps:
@@ -150,6 +154,32 @@ jobs:
             echo "run_integration_test.sh not found - skipping"
             exit 0
           fi
+
+  consensus-state:
+    name: 🧬 Consensus State Regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Go
+        uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Run simulator chain tests
+        # Dynamic counterpart to the static consensus-guard: boots a chain
+        # from genesis and asserts state transitions (wallets, transfers,
+        # smart contracts) hold. Hard gate - a consensus regression here
+        # blocks merge. Runs ~10s.
+        run: |
+          go test -mod=vendor -count=1 -timeout 30m -v ./cmd/simulator/
 
   binary-analysis:
     name: Binary Security Analysis

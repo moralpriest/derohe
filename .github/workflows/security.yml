@@ -14,6 +14,10 @@ permissions: read-all
 env:
   GO_VERSION: "1.26"
 
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gitleaks:
     name: Secret Scanning
@@ -39,7 +43,6 @@ jobs:
     name: Go Vulnerability Check
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true # Advisory while CI hardening changes settle
     permissions:
       contents: read
     steps:
@@ -57,13 +60,16 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
       - name: Run govulncheck
-        run: govulncheck -mod=vendor ./... || true
+        # Hard gate: known-vulnerable deps must be fixed or explicitly
+        # triaged before merge. This is the highest-value scan for a
+        # chain that holds funds. Note: govulncheck does not accept -mod.
+        run: govulncheck ./...
 
   gosec:
     name: Go Security Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true # Advisory while CI hardening changes settle
+    continue-on-error: true # Advisory; flip to blocking once findings are triaged (target 2026-10-01)
     permissions:
       contents: read
       security-events: write
@@ -88,7 +94,7 @@ jobs:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true # Advisory while CI hardening changes settle
+    continue-on-error: true # Advisory; flip to blocking once findings are triaged (target 2026-10-01)
     permissions:
       security-events: write
       actions: read
@@ -121,7 +127,7 @@ jobs:
     name: Semgrep Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true # Advisory while CI hardening changes settle
+    continue-on-error: true # Advisory; flip to blocking once findings are triaged (target 2026-10-01)
     permissions:
       contents: read
       security-events: write
@@ -154,17 +160,23 @@ jobs:
           egress-policy: audit
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Run Trivy (table output for debugging)
+      - name: Run Trivy (CRITICAL gate)
+        # Hard gate at CRITICAL severity: the vendored tree carries ~250 HIGH
+        # findings in old deps, so gating on HIGH would be noise. HIGH findings
+        # are triaged via the SARIF upload to the Security tab; dependabot
+        # bumps will shrink them over time. Triaged findings go in .trivyignore.
         uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
         with:
           scan-type: "fs"
           scan-ref: "."
           format: "table"
-          severity: "CRITICAL,HIGH"
-          exit-code: "0"
+          severity: "CRITICAL"
+          exit-code: "1"
           scanners: "vuln"
+          ignore-unfixed: "true" # Only actionable (fixable) findings block
           trivyignores: ".trivyignore"
       - name: Run Trivy (SARIF for GitHub Security tab)
+        if: always() # Upload findings even when the gate above fails
         uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
         with:
           scan-type: "fs"
@@ -174,6 +186,7 @@ jobs:
           severity: "CRITICAL,HIGH"
           exit-code: "0"
           scanners: "vuln"
+          ignore-unfixed: "true"
           trivyignores: ".trivyignore"
       - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0

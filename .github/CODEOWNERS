@@ -1,0 +1,28 @@
+# CODEOWNERS: every change touching these paths requires review by the
+# listed owners. Combine with branch protection ("Require review from
+# Code Owners") so consensus changes cannot merge without sign-off.
+#
+# NOTE: update @moralpriest to your actual review team. These mirror the
+# consensus paths guarded by .github/workflows/consensus-guard.yml - the
+# static guard proves byte-identity with upstream; code owners provide the
+# human review on top.
+
+# Consensus-critical paths (must stay byte-identical to DEROFDN/derohe
+# community-dev; any divergence needs an upstream PR first)
+blockchain/          @moralpriest
+config/              @moralpriest
+dvm/                 @moralpriest
+transaction/         @moralpriest
+astrobwt/            @moralpriest
+pow/                 @moralpriest
+premine/             @moralpriest
+proof/               @moralpriest
+cryptography/        @moralpriest
+globals/             @moralpriest
+p2p/                 @moralpriest
+
+# CI/CD and release engineering
+.github/workflows/   @moralpriest
+Dockerfile           @moralpriest
+Makefile             @moralpriest
+Taskfile.yml         @moralpriest

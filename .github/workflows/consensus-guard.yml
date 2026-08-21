@@ -15,6 +15,10 @@ on:
     branches: ['**']
   workflow_dispatch:
 
+concurrency:
+  group: consensus-guard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   consensus-identical:
     runs-on: ubuntu-latest

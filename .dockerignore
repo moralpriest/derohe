@@ -1,0 +1,10 @@
+.git
+.opencode
+.github
+tests
+docs
+bin
+build
+*.log
+*.tmp
+derod.service.tmp

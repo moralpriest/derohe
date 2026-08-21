@@ -4,3 +4,15 @@
 #
 # Populate this file as Trivy findings are triaged. Entries must include a
 # comment justifying the suppression. Do not add entries without triage.
+#
+# Hard gate policy (see .github/workflows/security.yml): trivy fails the
+# pipeline on CRITICAL findings only. HIGH findings are surfaced in the
+# GitHub Security tab (SARIF) for triage and are expected to shrink as
+# dependabot bumps the vendored tree.
+
+# CVE-2026-33186 (google.golang.org/grpc authorization bypass, fixed in 1.79.3):
+# grpc appears only in vendored module metadata - github.com/tjfoc/gmsm and
+# github.com/xtaci/kcp-go/v5 declare it in their go.mod/go.sum but no Go
+# source in this tree imports google.golang.org/grpc, so the vulnerable code
+# is never compiled. Re-check if gmsm/kcp-go are ever upgraded to import it.
+CVE-2026-33186

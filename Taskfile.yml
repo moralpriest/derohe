@@ -139,6 +139,20 @@ tasks:
     cmds:
       - golangci-lint run --fix --timeout=10m --exclude-dirs=^vendor/
 
+  vet:
+    desc: Run go vet (hard gate - mirrors CI)
+    cmds:
+      - |
+        # -unreachable/-composites disabled: remaining findings live in consensus
+        # paths (astrobwt, dvm, blockchain) and cannot be fixed locally without
+        # diverging from upstream - tracked via the consensus-guard workflow.
+        go vet -mod=vendor -unreachable=false -composites=false ./...
+
+  race:
+    desc: Run tests with the race detector on concurrency-critical paths (mirrors CI)
+    cmds:
+      - go test -mod=vendor -race -count=1 -timeout 35m ./p2p/... ./blockchain/... ./walletapi/... ./dvm/... ./transaction/...
+
   fmt:
     desc: Format code
     cmds:

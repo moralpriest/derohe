@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # Go module updates.
+  # NOTE: this repo vendors its dependencies and has no go.sum. When a
+  # dependabot PR updates go.mod/go.sum, the vendored tree must be
+  # regenerated (make vendor) and committed in the same PR, otherwise the
+  # vendored build gate in CI fails. Trivy/govulncheck gates must also
+  # stay green, so only merge dependency bumps that are clean.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    groups:
+      go-modules:
+        patterns: ["*"]
+        update-types:
+          - "patch"
+          - "minor"
+
+  # GitHub Actions updates.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "ci"
+    groups:
+      github-actions:
+        patterns: ["*"]

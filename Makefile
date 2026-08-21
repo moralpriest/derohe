@@ -1,7 +1,7 @@
 GOOS := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
 
-.PHONY: all build build-all test test-simulator test-integration fmt lint clean
+.PHONY: all build build-all test test-simulator test-integration fmt lint vet clean
 
 all: build
 
@@ -40,6 +40,10 @@ fmt:
 
 lint:
 	golangci-lint run --timeout=10m --exclude-dirs=^vendor/
+
+vet:
+	@echo "Running go vet (hard gate)..."
+	go vet -mod=vendor -unreachable=false -composites=false ./...
 
 clean:
 	rm -rf bin/
