@@ -12,7 +12,7 @@ import "fmt"
 const (
 	// Maximum safe value for int64 conversion (2^63 - 1)
 	// Prevents uint64 to int64 wraparound attacks
-	maxInt64Safe = 9223372036854775807
+	maxInt64Safe uint64 = 9223372036854775807
 
 	// For display and calculations: 1 DERO = 100,000 atomic units
 	// (matches globals/globals.go:295 and rpc_dero_getinfo.go:81)
@@ -63,7 +63,7 @@ func DetectSuspiciousProofPatterns(amount uint64) []string {
 	var warnings []string
 
 	// Warning 1: Near int64 boundary (possible wraparound attempt)
-	boundaryThreshold := uint64(maxInt64Safe * 9 / 10) // Within 90% of wraparound
+	boundaryThreshold := maxInt64Safe / 10 * 9 // Within 90% of wraparound
 	if amount > boundaryThreshold {
 		warnings = append(warnings, "amount near int64 maximum - possible wraparound attempt")
 	}
