@@ -1,0 +1,191 @@
+name: Node Assurance
+
+on:
+  push:
+    branches: [main, dev, community-dev]
+  pull_request:
+    branches: [main, dev, community-dev]
+  schedule:
+    - cron: "0 2 * * *" # Daily at 2 AM
+  workflow_dispatch:
+
+permissions: read-all
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  reproducible-build:
+    name: Reproducible Build Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Go
+        uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Build 1st time
+        env:
+          GOFLAGS: -mod=vendor
+        run: |
+          go build -trimpath -ldflags=-buildid= -o derod-build1 ./cmd/derod
+          sha256sum derod-build1 | awk '{print $1}' > checksum1.txt
+      - name: Clean and rebuild
+        env:
+          GOFLAGS: -mod=vendor
+        run: |
+          go clean -cache
+          rm -f derod-build1
+          go build -trimpath -ldflags=-buildid= -o derod-build2 ./cmd/derod
+          sha256sum derod-build2 | awk '{print $1}' > checksum2.txt
+      - name: Compare builds
+        run: |
+          echo "Build 1:"
+          cat checksum1.txt
+          echo ""
+          echo "Build 2:"
+          cat checksum2.txt
+          echo ""
+          if cmp -s checksum1.txt checksum2.txt; then
+            echo "✅ Reproducible build verified - checksums match"
+          else
+            echo "❌ Builds differ - non-deterministic build process"
+            echo "derohe uses -trimpath -ldflags=-buildid= for reproducible builds."
+            echo "Investigate any remaining nondeterminism (e.g. build IDs, timestamps)."
+            exit 1
+          fi
+
+  crypto-hygiene:
+    name: Cryptographic Hygiene Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true # Advisory while findings are triaged and documented
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check for insecure crypto patterns
+        run: |
+          set -euo pipefail
+          echo "Checking for cryptographic hygiene issues..."
+          FAILED=0
+          echo "Checking for math/rand in sensitive code paths..."
+          MATCHES=$(grep -r "math/rand" --include="*.go" . 2>/dev/null | grep -v "_test.go" | grep -v "vendor/" | grep -v "bundled" | head -20 || true)
+          if [ -n "$MATCHES" ]; then
+            echo "⚠️ WARNING: math/rand found in non-test code. Ensure it's not used for cryptographic purposes."
+            echo "For cryptographic randomness, use crypto/rand instead."
+            echo "$MATCHES"
+            FAILED=1
+          else
+            echo "✅ No math/rand usage found in production code"
+          fi
+          echo ""
+          echo "Checking for weak hash usage..."
+          MATCHES=$(grep -rE "md5|sha1" --include="*.go" . 2>/dev/null | grep -v "_test.go" | grep -v "vendor/" | grep -v "bundled" | grep -v "#nosec" | grep -v "// nosec" | head -20 || true)
+          if [ -n "$MATCHES" ]; then
+            echo "⚠️ WARNING: Potentially weak hash algorithms found without suppression comments."
+            echo "Review these usages and add #nosec comments with justification if appropriate."
+            echo "$MATCHES"
+            FAILED=1
+          else
+            echo "✅ All weak hash usages are properly documented with #nosec"
+          fi
+          echo ""
+          echo "Checking for potential hardcoded secrets..."
+          MATCHES=$(grep -rE '\b(password|secret|key|token|api_key)\s*=\s*"[^"]{8,}"' --include="*.go" . 2>/dev/null | grep -v "_test.go" | grep -v "vendor/" | grep -v "bundled" | grep -vE '\b(password|secret|key|token|api_key)\s*=\s*"[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+"' | head -10 || true)
+          if [ -n "$MATCHES" ]; then
+            echo "⚠️ WARNING: Potential hardcoded secrets found. Review manually."
+            echo "$MATCHES"
+            FAILED=1
+          else
+            echo "✅ No obvious hardcoded secrets detected"
+          fi
+          echo ""
+          if [ $FAILED -eq 1 ]; then
+            echo "⚠️ Cryptographic hygiene check found issues (advisory)"
+            exit 0
+          fi
+          echo "✅ Cryptographic hygiene check complete"
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Go
+        uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Build binaries for integration testing
+        run: |
+          go build -mod=vendor -o /tmp/ ./cmd/...
+      - name: Run simulator integration suite
+        run: |
+          if [ -x ./run_integration_test.sh ]; then
+            bash ./run_integration_test.sh
+          else
+            echo "run_integration_test.sh not found - skipping"
+            exit 0
+          fi
+
+  binary-analysis:
+    name: Binary Security Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Go
+        uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Build binary
+        run: |
+          go build -mod=vendor -trimpath -ldflags="-s -w" -o derod ./cmd/derod
+          go build -mod=vendor -trimpath -ldflags="-s -w" -o dero-wallet-cli ./cmd/dero-wallet-cli
+      - name: Check for sensitive strings in binaries
+        run: |
+          echo "Checking binaries for sensitive patterns..."
+          for bin in derod dero-wallet-cli; do
+            echo "--- $bin ---"
+            if strings "$bin" | grep -iE "(api[_-]?key|secret[_-]?key|password|token)" | head -10; then
+              echo "⚠️ WARNING: Potential sensitive strings found in binary"
+              echo "Review and ensure these are not actual secrets"
+            else
+              echo "✅ No obvious sensitive strings found"
+            fi
+            file "$bin"
+            ls -lh "$bin"
+            echo ""
+          done
+          echo "✅ Binary analysis complete"

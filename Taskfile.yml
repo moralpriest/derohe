@@ -1,0 +1,311 @@
+# Taskfile for DERO HE development
+# Install: go install github.com/go-task/task/v3/cmd/task@latest
+# Usage: task <command>
+# https://taskfile.dev/
+
+version: "3"
+
+vars:
+  VERSION:
+    sh: grep 'var Version' config/version.go | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  GOFLAGS: -mod=vendor
+  BIN_DIR: bin
+  BINARIES: derod dero-wallet-cli dero-miner explorer simulator
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # ==================== Development ====================
+
+  build:
+    desc: Build all binaries (derod, dero-wallet-cli, dero-miner, explorer, simulator)
+    cmds:
+      - task: build-derod
+      - task: build-wallet-cli
+      - task: build-miner
+      - task: build-explorer
+      - task: build-simulator
+    generates:
+      - bin/derod
+      - bin/dero-wallet-cli
+      - bin/dero-miner
+      - bin/explorer
+      - bin/simulator
+
+  build-derod:
+    desc: Build the derod daemon binary
+    cmds:
+      - go build -mod=vendor -trimpath -ldflags=-buildid= -o bin/derod ./cmd/derod
+    generates:
+      - bin/derod
+
+  build-wallet-cli:
+    desc: Build the dero-wallet-cli binary
+    cmds:
+      - go build -mod=vendor -trimpath -ldflags=-buildid= -o bin/dero-wallet-cli ./cmd/dero-wallet-cli
+    generates:
+      - bin/dero-wallet-cli
+
+  build-miner:
+    desc: Build the dero-miner binary
+    cmds:
+      - go build -mod=vendor -trimpath -ldflags=-buildid= -o bin/dero-miner ./cmd/dero-miner
+    generates:
+      - bin/dero-miner
+
+  build-explorer:
+    desc: Build the explorer binary
+    cmds:
+      - go build -mod=vendor -trimpath -ldflags=-buildid= -o bin/explorer ./cmd/explorer
+    generates:
+      - bin/explorer
+
+  build-simulator:
+    desc: Build the simulator binary
+    cmds:
+      - go build -mod=vendor -trimpath -ldflags=-buildid= -o bin/simulator ./cmd/simulator
+    generates:
+      - bin/simulator
+
+  build-webwallet:
+    desc: Build the webwallet WASM bundle (target js/wasm - requires GOOS=js GOARCH=wasm)
+    cmds:
+      - GOOS=js GOARCH=wasm go build -mod=vendor -trimpath -ldflags=-buildid= -o bin/webwallet.wasm ./cmd/webwallet
+    generates:
+      - bin/webwallet.wasm
+
+  package:
+    desc: Build all binaries for all supported platforms (calls build_package.sh)
+    cmds:
+      - bash ./build_package.sh ./cmd/derod
+      - bash ./build_package.sh ./cmd/explorer
+      - bash ./build_package.sh ./cmd/dero-wallet-cli
+      - bash ./build_package.sh ./cmd/dero-miner
+      - bash ./build_package.sh ./cmd/simulator
+    generates:
+      - build/
+
+  package-all:
+    desc: Build all binaries and create release archives (calls build_all.sh)
+    cmds:
+      - bash ./build_all.sh
+
+  run-simulator:
+    desc: Build and run the simulator
+    deps: [build-simulator]
+    cmds:
+      - ./bin/simulator
+
+  # ==================== Testing ====================
+
+  test:
+    desc: Run unit tests (excluding simulator chain tests) with coverage
+    cmds:
+      - go test -mod=vendor -timeout 30m -coverprofile=coverage.out $(go list -mod=vendor ./... | grep -v '/cmd/simulator$')
+      - go tool cover -html=coverage.out -o coverage.html
+    generates:
+      - coverage.out
+      - coverage.html
+
+  test-simulator:
+    desc: Run the simulator chain tests only
+    cmds:
+      - go test -mod=vendor -timeout 30m -v ./cmd/simulator/...
+
+  test-integration:
+    desc: Run the simulator-based integration suite (run_integration_test.sh)
+    cmds:
+      - bash ./run_integration_test.sh
+
+  test-integration-one:
+    desc: Run a single integration test by name (e.g. task test-integration-one -- name_test)
+    cmds:
+      - bash ./run_integration_test.sh {{.CLI_ARGS}}
+
+  # ==================== Quality ====================
+
+  lint:
+    desc: Run linters
+    cmds:
+      - golangci-lint run --timeout=10m
+
+  lint-fix:
+    desc: Run linters and fix issues
+    cmds:
+      - golangci-lint run --fix --timeout=10m --exclude-dirs=^vendor/
+
+  fmt:
+    desc: Format code
+    cmds:
+      - gofmt -w -s $(find . -name "*.go" -not -path "./vendor/*")
+      - goimports -w $(find . -name "*.go" -not -path "./vendor/*") || true
+
+  fmt-check:
+    desc: Check formatting without modifying files
+    cmds:
+      - |
+        # webwallet is a legacy js/wasm source file and is excluded from the native Go format gate.
+        FILES=$(gofmt -l $(find . -name "*.go" -not -path "./vendor/*" -not -path "./cmd/webwallet/*"))
+        if [ -n "$FILES" ]; then
+          echo "Files need formatting:"
+          echo "$FILES"
+          exit 1
+        fi
+        echo "✅ All Go files formatted"
+
+  vendor-verify:
+    desc: Verify the vendored tree builds cleanly
+    cmds:
+      - go build -mod=vendor ./cmd/...
+      - go mod verify || true
+
+  # ==================== Security ====================
+
+  security:
+    desc: Run all security checks
+    cmds:
+      - task: govulncheck
+      - task: gosec
+      - task: gitleaks
+      - task: trivy
+      - task: semgrep
+
+  govulncheck:
+    desc: Check for known vulnerabilities
+    cmds:
+      - govulncheck -mod=vendor ./...
+
+  gosec:
+    desc: Run Go security scanner
+    cmds:
+      - gosec -exclude=G104,G115,G602 -exclude-dir=vendor ./...
+
+  gitleaks:
+    desc: Scan for secrets
+    cmds:
+      - gitleaks detect --source . --verbose
+
+  trivy:
+    desc: Run Trivy filesystem scan
+    cmds:
+      - trivy fs --severity CRITICAL,HIGH --ignorefile .trivyignore .
+
+  semgrep:
+    desc: Run Semgrep security analysis
+    cmds:
+      - semgrep scan --config auto --config p/golang --severity ERROR --severity WARNING .
+
+  sbom:
+    desc: Generate Software Bill of Materials (SBOM)
+    cmds:
+      - mkdir -p dist
+      - syft packages dir:. -o spdx-json > dist/sbom.spdx.json
+
+  sign:
+    desc: Sign artifacts with Cosign
+    cmds:
+      - |
+        for file in dist/*.tar.xz dist/*.tar.gz dist/*.zip dist/*.exe; do
+          if [ -f "$file" ]; then
+            cosign sign-blob --yes "$file" --bundle "${file}.bundle"
+          fi
+        done
+
+  verify-signatures:
+    desc: Verify signed artifacts
+    cmds:
+      - |
+        for file in dist/*.tar.xz dist/*.tar.gz dist/*.zip dist/*.exe; do
+          if [ -f "$file" ] && [ -f "${file}.bundle" ]; then
+            cosign verify-blob "$file" --bundle "${file}.bundle"
+          fi
+        done
+
+  checksums:
+    desc: Generate SHA256 checksums
+    cmds:
+      - |
+        cd dist && sha256sum * > SHA256SUMS.txt
+
+  # ==================== CI/CD Helpers ====================
+
+  check:
+    desc: Run all checks (format, lint, security, test)
+    cmds:
+      - task: fmt-check
+      - task: lint
+      - task: test
+
+  ci:
+    desc: Run CI pipeline locally
+    cmds:
+      - task: vendor-verify
+      - task: fmt-check
+      - task: lint
+      - task: build
+      - task: test
+
+  check-conventional:
+    desc: Validate conventional commit format for last commit
+    cmds:
+      - |
+        MSG=$(git log -1 --pretty=format:"%s")
+        if ! echo "$MSG" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .{1,}"; then
+          echo "Commit message does not follow conventional commits format:"
+          echo "$MSG"
+          echo ""
+          echo "Format: type(scope): description"
+          echo "Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+          exit 1
+        fi
+        echo "✓ Commit message follows conventional format"
+
+  setup:
+    desc: Install development tools
+    cmds:
+      - go install github.com/go-task/task/v3/cmd/task@latest
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+      - go install golang.org/x/vuln/cmd/govulncheck@latest
+      - go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - go install golang.org/x/tools/cmd/goimports@latest
+      - echo "Install gitleaks from https://github.com/gitleaks/gitleaks/releases"
+      - echo "Install Trivy from https://github.com/aquasecurity/trivy/releases"
+      - echo "Install Syft from https://github.com/anchore/syft/releases"
+      - echo "Install Cosign from https://github.com/sigstore/cosign/releases"
+      - 'echo "Install Semgrep: pip install semgrep"'
+
+  # ==================== Cleanup ====================
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf bin/
+      - rm -f coverage.out coverage.html
+      - rm -f derod dero-wallet-cli dero-miner explorer simulator
+      - rm -f bin/webwallet.wasm
+
+  clean-dist:
+    desc: Clean distribution artifacts
+    cmds:
+      - rm -rf dist/
+      - rm -rf build/
+
+  clean-all:
+    desc: Clean all artifacts
+    deps: [clean, clean-dist]
+
+  # ==================== Info ====================
+
+  version:
+    desc: Show version information
+    cmds:
+      - echo "Version:" {{.VERSION}}
+      - echo "Commit:" {{.COMMIT}}
+      - go version
+      - golangci-lint --version || true
+      - task --version

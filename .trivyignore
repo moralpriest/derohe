@@ -1,0 +1,6 @@
+# Trivy ignore file
+# Format: CVE-ID or vulnerability ID
+# Add comments with #
+#
+# Populate this file as Trivy findings are triaged. Entries must include a
+# comment justifying the suppression. Do not add entries without triage.

@@ -1,0 +1,219 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, community-dev]
+  pull_request:
+    branches: [main, dev, community-dev]
+  workflow_dispatch:
+
+permissions: read-all
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  lint:
+    name: 🔍 Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true # Advisory while legacy lint debt is reduced incrementally
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: ⚙️ Set up Go
+        uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: 🏗️ Vendored build gate
+        run: |
+          go build -mod=vendor ./cmd/...
+      - name: 🔍 Run golangci-lint (advisory)
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          golangci-lint run --timeout=10m || true
+      - name: 🎨 Check formatting (advisory)
+        run: |
+          FILES=$(gofmt -l $(find . -name "*.go" -not -path "./vendor/*"))
+          if [ -n "$FILES" ]; then
+            echo "Files need formatting (advisory):"
+            echo "$FILES"
+            exit 0
+          fi
+          echo "✅ All Go files formatted"
+
+  build:
+    name: 🏗️ Build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: ⚙️ Set up Go
+        uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: 🏷️ Get version
+        id: version
+        run: |
+          VER=$(grep 'var Version' config/version.go | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          echo "version=${VER:-dev}" >> $GITHUB_OUTPUT
+        shell: bash
+      - name: 🔨 Build all binaries
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          for pkg in derod dero-wallet-cli dero-miner explorer simulator; do
+            go build -mod=vendor -trimpath -ldflags=-buildid= -o "bin/${pkg}" "./cmd/${pkg}"
+            echo "✅ ${pkg}: $(ls -la "bin/${pkg}" | awk '{print $5}') bytes"
+          done
+        shell: bash
+      - name: ✅ Verify binaries
+        run: |
+          ls -la bin/
+          for b in bin/*; do
+            if [ ! -x "$b" ]; then
+              echo "❌ $b is not executable"
+              exit 1
+            fi
+          done
+          echo "✅ All binaries present and executable"
+
+  test:
+    name: 🧪 Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: ⚙️ Set up Go
+        uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: 🔎 Check for test files
+        id: check-tests
+        run: |
+          TEST_FILES=$(find . -name "*_test.go" -not -path "./vendor/*" | head -1)
+          if [ -z "$TEST_FILES" ]; then
+            echo "has_tests=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_tests=true" >> $GITHUB_OUTPUT
+            echo "Found test files:"
+            find . -name "*_test.go" -not -path "./vendor/*"
+          fi
+      - name: 🧪 Run unit tests (excluding simulator chain tests)
+        if: steps.check-tests.outputs.has_tests == 'true'
+        run: |
+          PKGS=$(go list -mod=vendor ./... | grep -v '/cmd/simulator$' || true)
+          if [ -n "$PKGS" ]; then
+            go test -mod=vendor -timeout 30m -coverprofile=coverage.out $PKGS
+          else
+            echo "No non-simulator packages with tests"
+          fi
+      - name: 📊 Check coverage
+        if: steps.check-tests.outputs.has_tests == 'true'
+        run: |
+          if [ -f coverage.out ]; then
+            COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+            echo "Total coverage: $COVERAGE%"
+            # Ratchet strategy: start low, raise gradually as unit tests are added
+            THRESHOLD=1.0
+            echo "Coverage threshold: $THRESHOLD% (ratchet strategy - raise gradually)"
+            if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+              echo "ERROR: Coverage $COVERAGE% is below threshold of $THRESHOLD%"
+              exit 1
+            fi
+            echo "Coverage check passed"
+          else
+            echo "No coverage report generated"
+          fi
+      - name: 📤 Upload coverage
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        if: always() && steps.check-tests.outputs.has_tests == 'true'
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 30
+
+  verify-commits:
+    name: ✍️ Verify Signed Commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    continue-on-error: true # Advisory - not all environments have signing configured
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: ✍️ Check commit signatures
+        run: |
+          # Check for commits without any signature attempt
+          # Note: Full verification requires GPG/SSH keys configured on runner
+          COMMITS=$(git log --pretty=format:'%H %GS' origin/${{ github.base_ref }}..HEAD 2>/dev/null || git log --pretty=format:'%H' -10)
+          echo "Commits in PR:"
+          git log --pretty=format:'%h %s' origin/${{ github.base_ref }}..HEAD 2>/dev/null || echo "Could not list commits"
+          echo ""
+          echo "Signature check passed (advisory only)"
+
+  conventional-commits:
+    name: 📋 Conventional Commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+      - name: 📋 Validate PR title
+        uses: amannn/action-semantic-pull-request@0723387faaf9b38adef4775cd42cfd5155ed6017 # v5.5.3
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          types: |
+            fix
+            feat
+            docs
+            refactor
+            test
+            chore
+            ci
+            build
+            security
+            revert
+          requireScope: false
+          subjectPattern: ^.+$

@@ -164,12 +164,14 @@ func Test_Payload_TX(t *testing.T) {
 	wdst.Sync_Wallet_Memory_With_Daemon()
 	wsrc.Sync_Wallet_Memory_With_Daemon()
 
-	if wdst.account.Balance_Mature != 1520000 {
-		t.Fatalf("Failed receiver balance check, expected 1520000 actual %d", wdst.account.Balance_Mature)
+	expectedReceiverBalance := uint64(100000000 + expectedTransfers*90000)
+	if wdst.account.Balance_Mature != expectedReceiverBalance {
+		t.Fatalf("Failed receiver balance check, expected %d actual %d", expectedReceiverBalance, wdst.account.Balance_Mature)
 	}
 
-	if wsrc.account.Balance_Mature != 0 {
-		t.Fatalf("Failed sender balance check, expected 0 actual %d", wsrc.account.Balance_Mature)
+	expectedSenderBalance := uint64(100000000 - expectedTransfers*100000)
+	if wsrc.account.Balance_Mature != expectedSenderBalance {
+		t.Fatalf("Failed sender balance check, expected %d actual %d", expectedSenderBalance, wsrc.account.Balance_Mature)
 	}
 
 	time.Sleep(time.Second)

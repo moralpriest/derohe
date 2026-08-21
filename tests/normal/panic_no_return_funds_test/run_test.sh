@@ -35,6 +35,8 @@ function scassetbalance(){
   	curl --silent http://127.0.0.1:$daemon_rpc_port/json_rpc -d '{"jsonrpc":"2.0","id":"0","method":"getsc","params":{ "scid":"'"$1"'" , "code":false, "variables":true}}' -H 'Content-Type: application/json'| jq -r '.result.balances."'$2'"'
 }
 
+player1_initial_balance=$(balance $player1_rpc_port)
+
 echo "SC owner address" $owner_address
 echo "player1 address" $player1_address
 echo "player2 address" $player2_address
@@ -56,8 +58,8 @@ echo "SC owner balance" $(balance $owner_rpc_port)
 echo "SC player1 balance" $(balance $player1_rpc_port)
 
 player1_balance=$(balance $player1_rpc_port)
-if [[ $player1_balance -gt 700000  ]] ; then 
-    exit 1 
-else
+if (( player1_balance < player1_initial_balance - 500000 )); then
     exit 0
+else
+    exit 1
 fi

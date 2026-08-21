@@ -35,6 +35,9 @@ function scassetbalance(){
   	curl --silent http://127.0.0.1:$daemon_rpc_port/json_rpc -d '{"jsonrpc":"2.0","id":"0","method":"getsc","params":{ "scid":"'"$1"'" , "code":false, "variables":true}}' -H 'Content-Type: application/json'| jq -r '.result.balances."'$2'"'
 }
 
+player1_initial_balance=$(balance $player1_rpc_port)
+player2_initial_balance=$(balance $player2_rpc_port)
+
 function mineblock(){
     touch /dev/shm/mineblocknow
 }
@@ -59,11 +62,13 @@ sleep 4
 
 echo "SC DERO balance" $(scassetbalance $scid $baseasset )
 echo "SC owner balance" $(balance $owner_rpc_port)
-echo "SC player1 balance" $(balance $player1_rpc_port)
-echo "SC player2 balance" $(balance $player2_rpc_port)
+player1_final_balance=$(balance $player1_rpc_port)
+player2_final_balance=$(balance $player2_rpc_port)
+echo "SC player1 balance" $player1_final_balance
+echo "SC player2 balance" $player2_final_balance
 
-if [[ $(balance $player1_rpc_port) -lt 300000  &&  $(balance $player2_rpc_port)  -gt 790000  ]] ; then 
-    exit 0 
+if (( player1_final_balance < player1_initial_balance - 500000 && player2_final_balance > player2_initial_balance - 10000 )); then
+    exit 0
 else
     echo "test failed"
     exit 1

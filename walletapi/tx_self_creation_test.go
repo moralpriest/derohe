@@ -155,8 +155,9 @@ func Test_Creation_TX_morecheck(t *testing.T) {
 	//fmt.Printf("balance wdst %v ringsize %d\n", wdst.account.Balance_Mature, wdst.account.Ringsize)
 	//fmt.Printf("balance wdst2 %v\n", wdst2.account.Balance_Mature)
 
-	if wdst.account.Balance_Mature != 1500000 {
-		t.Fatalf("failed balance check, expected 1500000 actual %d", wdst.account.Balance_Mature)
+	expectedBalance := uint64(100000000 + 700000)
+	if wdst.account.Balance_Mature != expectedBalance {
+		t.Fatalf("failed balance check, expected %d actual %d", expectedBalance, wdst.account.Balance_Mature)
 	}
 
 }

@@ -439,6 +439,8 @@ func TestXSWDServer(t *testing.T) {
 			authResponse := testHandleAuthResponse(t, conn)
 			t.Logf("Authorization %d response: %v", i, authResponse.Message)
 			assert.False(t, authResponse.Accepted, "Application %d should not be accepted and is", i)
+			// The server closes rejected sessions after sending the response.
+			time.Sleep(sleep10)
 
 			// Was application added to the server
 			assert.Len(t, server.GetApplications(), 0, "Application %d should not be present and is", i)
