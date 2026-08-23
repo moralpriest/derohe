@@ -1,6 +1,7 @@
 package p2p
 
 import "bytes"
+import "runtime"
 import "strings"
 import "testing"
 import "time"
@@ -63,6 +64,22 @@ func TestClockState_UnreachableClearsOnSuccess(t *testing.T) {
 	out := buf.String()
 	if strings.Count(out, "Cannot reach NTP") != 2 {
 		t.Fatalf("expected unreachable to re-fire after a successful query, got:\n%s", out)
+	}
+}
+
+func TestClockHints_NonEmpty(t *testing.T) {
+	if clockDriftHint() == "" || clockUnreachableHint() == "" {
+		t.Fatal("OS clock hints must be non-empty")
+	}
+	// This builder is linux; keep the linux wording pinned so a GOOS switch
+	// regression is obvious in CI.
+	if runtime.GOOS == "linux" {
+		if !strings.Contains(clockDriftHint(), "timedatectl") {
+			t.Fatalf("linux drift hint: %s", clockDriftHint())
+		}
+		if !strings.Contains(clockUnreachableHint(), "chrony") {
+			t.Fatalf("linux unreachable hint: %s", clockUnreachableHint())
+		}
 	}
 }
 

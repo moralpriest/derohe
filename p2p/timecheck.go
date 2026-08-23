@@ -18,6 +18,7 @@ package p2p
 
 import "time"
 import "math/rand"
+import "runtime"
 
 import "github.com/beevik/ntp"
 import "github.com/go-logr/logr"
@@ -41,6 +42,32 @@ var timeservers = []string{ // facebook/google do leap smearing, so they should 
 
 const clockDriftThreshold = time.Second
 
+func clockDriftHint() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "Enable automatic time (Settings → Time & language → Set time automatically) or run as admin: w32tm /resync."
+	case "darwin":
+		return "Enable automatic time (System Settings → Date & Time → Set automatically)."
+	case "linux":
+		return "Enable NTP: timedatectl set-ntp true, or install/start chrony."
+	default:
+		return "Enable your OS automatic time sync (NTP)."
+	}
+}
+
+func clockUnreachableHint() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "Allow outbound UDP/123; start the Windows Time service (w32tm)."
+	case "darwin":
+		return "Allow outbound UDP/123."
+	case "linux":
+		return "Allow outbound UDP/123; use systemd-timesyncd or chrony."
+	default:
+		return "Allow outbound UDP/123."
+	}
+}
+
 // clockTracker emits loud, once-per-transition warnings (default log level).
 var clockTracker = &clockState{}
 
@@ -58,7 +85,7 @@ func (s *clockState) observe(ntpOK bool, offset time.Duration, log logr.Logger, 
 	if !ntpOK {
 		if !s.unreachableWarned {
 			s.unreachableWarned = true
-			log.Error(reason, "Cannot reach NTP servers (UDP/123). Clock cannot be verified. Allow outbound NTP or install chrony.")
+			log.Error(reason, "Cannot reach NTP servers (UDP/123). Clock cannot be verified. "+clockUnreachableHint())
 		}
 		return
 	}
@@ -67,7 +94,7 @@ func (s *clockState) observe(ntpOK bool, offset time.Duration, log logr.Logger, 
 	if drifted {
 		if !s.driftWarned {
 			s.driftWarned = true
-			log.Error(nil, "CLOCK DRIFT: system time is more than 1s off NTP. Chain sync and mining rewards may fail. Sync with chrony/NTP (e.g. timedatectl set-ntp true / chronyc tracking).", "offset", offset)
+			log.Error(nil, "CLOCK DRIFT: system time is more than 1s off NTP. Chain sync and mining rewards may fail. "+clockDriftHint(), "offset", offset)
 		}
 		return
 	}
