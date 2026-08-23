@@ -71,9 +71,14 @@ func clockUnreachableHint() string {
 // clockTracker emits loud, once-per-transition warnings (default log level).
 var clockTracker = &clockState{}
 
+// unreachableWarnCooldown caps how often the NTP-unreachable warning can
+// repeat when connectivity is intermittent (successes reset the latch but
+// must not produce a fresh warning more than once per cooldown).
+const unreachableWarnCooldown = 10 * time.Minute
+
 type clockState struct {
 	driftWarned       bool
-	unreachableWarned bool
+	lastUnreachableAt time.Time // zero = never warned; gates unreachable re-warns
 }
 
 // observe records one NTP attempt. ntpOK false means no server answered.
@@ -83,13 +88,15 @@ func (s *clockState) observe(ntpOK bool, offset time.Duration, log logr.Logger, 
 		return
 	}
 	if !ntpOK {
-		if !s.unreachableWarned {
-			s.unreachableWarned = true
+		// Warn on first failure, then at most once per cooldown. Successful
+		// queries do not re-arm the warning — with intermittent connectivity
+		// that would degenerate into a nag every minute or so.
+		if s.lastUnreachableAt.IsZero() || time.Since(s.lastUnreachableAt) > unreachableWarnCooldown {
+			s.lastUnreachableAt = time.Now()
 			log.Error(reason, "Cannot reach NTP servers (UDP/123). Clock cannot be verified. "+clockUnreachableHint())
 		}
 		return
 	}
-	s.unreachableWarned = false
 	drifted := offset > clockDriftThreshold || offset < -clockDriftThreshold
 	if drifted {
 		if !s.driftWarned {
@@ -136,16 +143,18 @@ func probeClockOnce() {
 	if log.GetSink() == nil {
 		log = globals.Logger
 	}
+	var lastErr error
 	for i := 0; i < 3 && i < len(timeservers); i++ {
 		offset, err := queryOneNTP(timeservers[i])
 		if err != nil {
+			lastErr = err
 			continue
 		}
 		applyNTPOffset(offset)
 		clockTracker.observe(true, offset, log, nil)
 		return
 	}
-	clockTracker.observe(false, 0, log, nil)
+	clockTracker.observe(false, 0, log, lastErr)
 }
 
 // continuously checks time for deviation if possible
