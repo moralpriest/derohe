@@ -149,11 +149,42 @@ func probeClockOnce() {
 }
 
 // continuously checks time for deviation if possible
-func time_check_routine() {
-	const offset_count = 128
-	var offsets [offset_count]time.Duration
-	var offset_index int
+const offsetWindowSize = 128
 
+// offsetWindow is a fixed-size rolling average of NTP offsets.
+// Zero samples are ignored (unused slots after flush).
+type offsetWindow struct {
+	samples [offsetWindowSize]time.Duration
+	idx     int
+}
+
+func (w *offsetWindow) add(d time.Duration) time.Duration {
+	w.samples[w.idx] = d
+	w.idx = (w.idx + 1) % offsetWindowSize
+	return w.avg()
+}
+
+func (w *offsetWindow) avg() time.Duration {
+	var sum time.Duration
+	var n time.Duration
+	for _, o := range w.samples {
+		if o != 0 {
+			sum += o
+			n++
+		}
+	}
+	if n == 0 {
+		return 0
+	}
+	return sum / n
+}
+
+func (w *offsetWindow) flush() {
+	*w = offsetWindow{}
+}
+
+func time_check_routine() {
+	var win offsetWindow
 	random := rand.New(globals.NewCryptoRandSource())
 	timeinsync := false
 	for {
@@ -162,26 +193,17 @@ func time_check_routine() {
 		if offset, err := queryOneNTP(server); err != nil {
 			clockTracker.observe(false, 0, logger, err)
 		} else {
-			offsets[offset_index] = offset
-			offset_index = (offset_index + 1) % offset_count
-
-			var avg_offset time.Duration
-			var avg_count time.Duration
-			for _, o := range offsets {
-				if o != 0 {
-					avg_offset += o
-					avg_count++
-				}
+			avg_offset := win.add(offset)
+			now_in_sync := offset > -clockDriftThreshold && offset < clockDriftThreshold
+			if now_in_sync && !timeinsync {
+				// Clock just recovered: drop stale drifted samples so the
+				// average (and GetInfo) converges immediately instead of
+				// decaying for hours at the slow in-sync poll interval.
+				win.flush()
+				avg_offset = win.add(offset)
 			}
-			if avg_count > 0 {
-				avg_offset = avg_offset / avg_count
-			}
+			timeinsync = now_in_sync
 			applyNTPOffset(avg_offset)
-			if offset > -clockDriftThreshold && offset < clockDriftThreshold {
-				timeinsync = true
-			} else {
-				timeinsync = false
-			}
 			clockTracker.observe(true, offset, logger, nil)
 		}
 
