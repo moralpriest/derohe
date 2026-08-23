@@ -51,14 +51,14 @@ type clockState struct {
 
 // observe records one NTP attempt. ntpOK false means no server answered.
 // Warnings print at default verbosity, once per state change.
-func (s *clockState) observe(ntpOK bool, offset time.Duration, log logr.Logger) {
+func (s *clockState) observe(ntpOK bool, offset time.Duration, log logr.Logger, reason error) {
 	if log.GetSink() == nil {
 		return
 	}
 	if !ntpOK {
 		if !s.unreachableWarned {
 			s.unreachableWarned = true
-			log.Error(nil, "Cannot reach NTP servers (UDP/123). Clock cannot be verified. Allow outbound NTP or install chrony.")
+			log.Error(reason, "Cannot reach NTP servers (UDP/123). Clock cannot be verified. Allow outbound NTP or install chrony.")
 		}
 		return
 	}
@@ -92,6 +92,11 @@ func queryOneNTP(server string) (time.Duration, error) {
 		return 0, err
 	}
 	if err := response.Validate(); err != nil {
+		// Keep a clearly-drifted offset even when Validate fails (libfaketime
+		// and messy RTT can trip freshness/dispersion checks).
+		if response.ClockOffset > clockDriftThreshold || response.ClockOffset < -clockDriftThreshold {
+			return response.ClockOffset, nil
+		}
 		return 0, err
 	}
 	return response.ClockOffset, nil
@@ -110,10 +115,10 @@ func probeClockOnce() {
 			continue
 		}
 		applyNTPOffset(offset)
-		clockTracker.observe(true, offset, log)
+		clockTracker.observe(true, offset, log, nil)
 		return
 	}
-	clockTracker.observe(false, 0, log)
+	clockTracker.observe(false, 0, log, nil)
 }
 
 // continuously checks time for deviation if possible
@@ -128,7 +133,7 @@ func time_check_routine() {
 		server := timeservers[random.Int()%len(timeservers)]
 
 		if offset, err := queryOneNTP(server); err != nil {
-			clockTracker.observe(false, 0, logger)
+			clockTracker.observe(false, 0, logger, err)
 		} else {
 			offsets[offset_index] = offset
 			offset_index = (offset_index + 1) % offset_count
@@ -150,7 +155,7 @@ func time_check_routine() {
 			} else {
 				timeinsync = false
 			}
-			clockTracker.observe(true, offset, logger)
+			clockTracker.observe(true, offset, logger, nil)
 		}
 
 		if !timeinsync {
