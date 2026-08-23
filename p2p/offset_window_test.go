@@ -50,3 +50,18 @@ func TestOffsetWindow_RecoverDropsStale(t *testing.T) {
 		t.Fatalf("after recover flush, avg should equal live sample %s, got %s", good, avg)
 	}
 }
+
+func TestOffsetWindow_WrapAround(t *testing.T) {
+	var w offsetWindow
+	for i := 0; i < offsetWindowSize; i++ {
+		if got := w.add(100 * time.Millisecond); got != 100*time.Millisecond {
+			t.Fatalf("fill[%d]: want 100ms got %s", i, got)
+		}
+	}
+	// Overwrite the oldest slot: 127×100ms + 228ms = 12928ms / 128 = 101ms.
+	got := w.add(228 * time.Millisecond)
+	want := 101 * time.Millisecond
+	if got != want {
+		t.Fatalf("after wrap: want %s got %s", want, got)
+	}
+}
