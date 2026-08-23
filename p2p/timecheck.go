@@ -16,11 +16,11 @@
 
 package p2p
 
-//import "fmt"
 import "time"
 import "math/rand"
 
 import "github.com/beevik/ntp"
+import "github.com/go-logr/logr"
 
 import "github.com/deroproject/derohe/globals"
 
@@ -37,14 +37,87 @@ var timeservers = []string{ // facebook/google do leap smearing, so they should 
 	"ntp3.hetzner.de",
 	"time.cloudflare.com", // anycast
 	"ntp.se",              // anycast
-
 }
 
-// continusosly checks time for deviation if possible
-// ToDo initial warning should NOT get hidden in messages
-// TODO we need to spport interleaved NTP protocol, possibly over TCP
-func time_check_routine() {
+const clockDriftThreshold = time.Second
 
+// clockTracker emits loud, once-per-transition warnings (default log level).
+var clockTracker = &clockState{}
+
+type clockState struct {
+	driftWarned       bool
+	unreachableWarned bool
+}
+
+// observe records one NTP attempt. ntpOK false means no server answered.
+// Warnings print at default verbosity, once per state change.
+func (s *clockState) observe(ntpOK bool, offset time.Duration, log logr.Logger) {
+	if log.GetSink() == nil {
+		return
+	}
+	if !ntpOK {
+		if !s.unreachableWarned {
+			s.unreachableWarned = true
+			log.Error(nil, "Cannot reach NTP servers (UDP/123). Clock cannot be verified. Allow outbound NTP or install chrony.")
+		}
+		return
+	}
+	s.unreachableWarned = false
+	drifted := offset > clockDriftThreshold || offset < -clockDriftThreshold
+	if drifted {
+		if !s.driftWarned {
+			s.driftWarned = true
+			log.Error(nil, "CLOCK DRIFT: system time is more than 1s off NTP. Chain sync and mining rewards may fail. Sync with chrony/NTP (e.g. timedatectl set-ntp true / chronyc tracking).", "offset", offset)
+		}
+		return
+	}
+	if s.driftWarned {
+		s.driftWarned = false
+		log.Info("Clock is back in sync with NTP.", "offset", offset)
+	}
+}
+
+func applyNTPOffset(offset time.Duration) {
+	if offset.Milliseconds() < -50 || offset.Milliseconds() > 50 {
+		globals.ClockOffsetNTP = offset
+	} else {
+		globals.ClockOffsetNTP = 0
+	}
+	globals.TimeIsInSyncNTP = true
+}
+
+func queryOneNTP(server string) (time.Duration, error) {
+	response, err := ntp.Query(server)
+	if err != nil {
+		return 0, err
+	}
+	if err := response.Validate(); err != nil {
+		return 0, err
+	}
+	return response.ClockOffset, nil
+}
+
+// probeClockOnce runs a short synchronous NTP check before the background loop
+// so a drifted clock is reported immediately at startup.
+func probeClockOnce() {
+	log := logger
+	if log.GetSink() == nil {
+		log = globals.Logger
+	}
+	for i := 0; i < 3 && i < len(timeservers); i++ {
+		offset, err := queryOneNTP(timeservers[i])
+		if err != nil {
+			continue
+		}
+		applyNTPOffset(offset)
+		clockTracker.observe(true, offset, log)
+		return
+	}
+	clockTracker.observe(false, 0, log)
+}
+
+// continuously checks time for deviation if possible
+func time_check_routine() {
 	const offset_count = 128
 	var offsets [offset_count]time.Duration
 	var offset_index int
@@ -54,14 +127,10 @@ func time_check_routine() {
 	for {
 		server := timeservers[random.Int()%len(timeservers)]
 
-		if response, err := ntp.Query(server); err != nil {
-			//logger.V(2).Error(err, "error while querying time", "server", server)
-		} else if response.Validate() == nil {
-
-			if response.ClockOffset.Seconds() > -.05 && response.ClockOffset.Seconds() < .05 {
-
-			}
-			offsets[offset_index] = response.ClockOffset
+		if offset, err := queryOneNTP(server); err != nil {
+			clockTracker.observe(false, 0, logger)
+		} else {
+			offsets[offset_index] = offset
 			offset_index = (offset_index + 1) % offset_count
 
 			var avg_offset time.Duration
@@ -72,33 +141,22 @@ func time_check_routine() {
 					avg_count++
 				}
 			}
-			avg_offset = avg_offset / avg_count
-
-			// if offset is small, do not trust ourselves but instead trust the system itself
-			// we do not expect our resolution to be better than 50 ms
-			if avg_offset.Milliseconds() < -50 || avg_offset.Milliseconds() > 50 {
-				globals.ClockOffsetNTP = avg_offset
-			} else {
-				globals.ClockOffsetNTP = 0
+			if avg_count > 0 {
+				avg_offset = avg_offset / avg_count
 			}
-			globals.TimeIsInSyncNTP = true
-			// if offset is more than 1 sec
-			if response.ClockOffset.Seconds() > -1.0 && response.ClockOffset.Seconds() < 1.0 { // chrony can maintain upto 5 ms, ntps can maintain upto 10
+			applyNTPOffset(avg_offset)
+			if offset > -clockDriftThreshold && offset < clockDriftThreshold {
 				timeinsync = true
 			} else {
 				timeinsync = false
-				logger.V(1).Error(nil, "Your system time deviation is more than 1 secs (%s)."+
-					"\nYou may experience chain sync issues and/or other side-effects."+
-					"\nIf you are mining, your blocks may get rejected."+
-					"\nPlease sync your system using chrony/NTP software (default availble in all OS)."+
-					"\n eg. ntpdate pool.ntp.org  (for linux/unix)", "offset", response.ClockOffset)
 			}
+			clockTracker.observe(true, offset, logger)
 		}
 
 		if !timeinsync {
 			time.Sleep(5 * time.Second)
 		} else {
-			time.Sleep(time.Duration((random.Intn(60) + 60)) * time.Second) // check every 60 + random(60) secs to avoid fingerprinting
+			time.Sleep(time.Duration((random.Intn(60) + 60)) * time.Second)
 		}
 	}
 }
