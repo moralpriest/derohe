@@ -21,38 +21,36 @@ package blockchain
 // We must not call any packages that can call panic
 // NO Panics or FATALs please
 
-import "os"
-import "fmt"
-import "sync"
-import "time"
-import "bytes"
-import "runtime/debug"
-import "strings"
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"runtime"
+	"runtime/debug"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
-import "runtime"
-import "context"
-import "golang.org/x/crypto/sha3"
-import "golang.org/x/sync/semaphore"
-import "github.com/go-logr/logr"
+	"github.com/go-logr/logr"
+	"golang.org/x/crypto/sha3"
+	"golang.org/x/sync/semaphore"
 
-import "sync/atomic"
-
-import "github.com/hashicorp/golang-lru"
-
-import "github.com/deroproject/derohe/rpc"
-import "github.com/deroproject/derohe/config"
-import "github.com/deroproject/derohe/cryptography/crypto"
-import "github.com/deroproject/derohe/errormsg"
-import "github.com/deroproject/derohe/metrics"
-
-import "github.com/deroproject/derohe/dvm"
-import "github.com/deroproject/derohe/block"
-import "github.com/deroproject/derohe/globals"
-import "github.com/deroproject/derohe/transaction"
-import "github.com/deroproject/derohe/blockchain/mempool"
-import "github.com/deroproject/derohe/blockchain/regpool"
-
-import "github.com/deroproject/graviton"
+	"github.com/deroproject/derohe/block"
+	"github.com/deroproject/derohe/blockchain/mempool"
+	"github.com/deroproject/derohe/blockchain/regpool"
+	"github.com/deroproject/derohe/config"
+	"github.com/deroproject/derohe/cryptography/crypto"
+	"github.com/deroproject/derohe/dvm"
+	"github.com/deroproject/derohe/errormsg"
+	"github.com/deroproject/derohe/globals"
+	"github.com/deroproject/derohe/metrics"
+	"github.com/deroproject/derohe/rpc"
+	"github.com/deroproject/derohe/transaction"
+	"github.com/deroproject/graviton"
+	lru "github.com/hashicorp/golang-lru"
+)
 
 // all components requiring access to blockchain must use , this struct to communicate
 // this structure must be update while mutex
@@ -663,6 +661,15 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 				block_logger.Error(fmt.Errorf("Missing TX"), "TX missing", "txid", tx_hash.String())
 				return errormsg.ErrInvalidBlock, false
 			}
+			// Hark-Fork 3: check if TX is already stored
+			if bl.Height >= uint64(globals.Config.MAJOR_HF3_HEIGHT) {
+				if tx_data, err := chain.Store.Block_tx_store.ReadTX(tx_hash); err == nil {
+					if !bytes.Equal(tx_data, cbl.Txs[i].Serialize()) {
+						block_logger.Error(fmt.Errorf("TX data mismatch"), "Duplicate TX", "txid", tx_hash.String())
+						return errormsg.ErrInvalidBlock, false
+					}
+				}
+			}
 		}
 	}
 
@@ -706,9 +713,11 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 					return fmt.Errorf("Registration TX has not solved PoW"), false
 				}
 
-				if _, err = balance_tree.Get(cbl.Txs[i].MinerAddress[:]); err == nil {
-					block_logger.Error(fmt.Errorf("Registration TX already exists"), "registration already exists", "txid", cbl.Txs[i].GetHash())
-					return errormsg.ErrAlreadyExists, false
+				if bl.Height >= uint64(globals.Config.MAJOR_HF3_HEIGHT) {
+					if _, err = balance_tree.Get(cbl.Txs[i].MinerAddress[:]); err == nil {
+						block_logger.Error(fmt.Errorf("Registration TX already exists"), "registration already exists", "txid", cbl.Txs[i].GetHash())
+						return errormsg.ErrAlreadyExists, false
+					}
 				}
 
 				reg_map[string(cbl.Txs[i].MinerAddress[:])] = true
@@ -993,8 +1002,10 @@ func (chain *Blockchain) Add_Complete_Block(cbl *block.Complete_Block) (err erro
 					}
 					for t := range tx.Payloads {
 						if !tx.Payloads[t].SCID.IsZero() {
-							tree, _ := ss.GetTree(string(tx.Payloads[t].SCID[:]))
-							sc_change_cache[tx.Payloads[t].SCID] = tree
+							if _, ok := sc_change_cache[tx.Payloads[t].SCID]; !ok || bl_current.Height < uint64(globals.Config.MAJOR_HF3_HEIGHT) {
+								tree, _ := ss.GetTree(string(tx.Payloads[t].SCID[:]))
+								sc_change_cache[tx.Payloads[t].SCID] = tree
+							}
 						}
 					}
 					// we have loaded a tx successfully, now lets execute it

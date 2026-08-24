@@ -227,7 +227,7 @@ func ping_loop() {
 				defer cancel()
 
 				if err := c.Client.CallWithContext(ctx, "Peer.Ping", request, &response); err != nil {
-					c.logger.V(2).Error(err, "ping failed")
+					c.logger.V(2).Info("ping failed", "error", err.Error())
 					c.exit()
 					return
 				}
