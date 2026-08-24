@@ -312,10 +312,29 @@ func (w *Wallet_Memory) sync_loop(ctx context.Context, stop <-chan struct{}, don
 		}
 
 		var zerohash crypto.Hash
-		// The zero-SCID balance is the wallet's primary sync indicator. Token
-		// balances and history are refreshed on demand by their API callers.
-		if err := w.Sync_Wallet_Memory_With_Daemon_internal(zerohash); err != nil {
-			logger.Error(err, "wallet syncing err")
+		// Every tracked SCID is refreshed here, not just the zero-SCID balance.
+		// In-process consumers read EntriesNative directly and expect token
+		// balances to stay live without calling an API to pull them.
+		scids := w.trackedSCIDs()
+		if len(scids) == 0 {
+			if err := w.Sync_Wallet_Memory_With_Daemon(); err != nil {
+				logger.Error(err, "wallet syncing err")
+			}
+		} else {
+			for _, scid := range scids {
+				select {
+				case <-stop:
+					return
+				case <-w.Quit:
+					return
+				default:
+				}
+
+				err := w.Sync_Wallet_Memory_With_Daemon_internal(scid)
+				if scid == zerohash && err != nil {
+					logger.Error(err, "wallet syncing err")
+				}
+			}
 		}
 
 		select {
@@ -371,7 +390,7 @@ func (cli *Client) CallResponseWithContext(ctx context.Context, method string, p
 	response, err := rpc.Call(callCtx, method, params)
 	cli.lifecycleMu.RUnlock()
 	if err != nil {
-		if cli == rpc_client && isRPCTransportFailure(err) {
+		if cli == rpc_client && shouldInvalidateAfterCall(ctx, err) {
 			invalidateRPCClient(cli, rpc)
 		}
 		return nil, err
@@ -402,7 +421,7 @@ func (cli *Client) CallWithContext(ctx context.Context, method string, params in
 	err := rpc.CallResult(callCtx, method, params, result)
 	cli.lifecycleMu.RUnlock()
 	if err != nil {
-		if cli == rpc_client && isRPCTransportFailure(err) {
+		if cli == rpc_client && shouldInvalidateAfterCall(ctx, err) {
 			invalidateRPCClient(cli, rpc)
 		}
 		return err
@@ -429,6 +448,24 @@ func currentRPCCallTimeout() time.Duration {
 	rpcCallTimeoutMu.RLock()
 	defer rpcCallTimeoutMu.RUnlock()
 	return rpcCallTimeout
+}
+
+// shouldInvalidateAfterCall decides whether a failed call is evidence that the
+// shared daemon client is unusable.
+//
+// The client is process-wide, so invalidating it disconnects every wallet in
+// the process. A caller cancelling its own context — a wallet closing, or a
+// per-request deadline — says nothing about the transport, and must not take
+// the connection away from everyone else. An expired call budget with the
+// caller's context still live does mean the connection stopped answering.
+func shouldInvalidateAfterCall(callerCtx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if callerCtx != nil && callerCtx.Err() != nil {
+		return false
+	}
+	return isRPCTransportFailure(err)
 }
 
 func isRPCTransportFailure(err error) bool {

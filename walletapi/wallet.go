@@ -177,6 +177,19 @@ func (w *Wallet_Memory) IsSCIDTracked(scid crypto.Hash) bool {
 	return tracked
 }
 
+// trackedSCIDs returns a snapshot of every SCID the wallet is tracking, so the
+// sync loop can refresh each one without holding the wallet lock across the
+// RPC calls.
+func (w *Wallet_Memory) trackedSCIDs() []crypto.Hash {
+	w.RLock()
+	defer w.RUnlock()
+	scids := make([]crypto.Hash, 0, len(w.account.EntriesNative))
+	for scid := range w.account.EntriesNative {
+		scids = append(scids, scid)
+	}
+	return scids
+}
+
 func (w *Wallet_Memory) TokenAdd(scid crypto.Hash) (err error) {
 	w.Lock()
 	defer w.Unlock()

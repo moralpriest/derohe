@@ -116,7 +116,12 @@ func connectWithContext(ctx context.Context, endpoint string) (err error) {
 
 	setConnected(true)
 	if err = test_connectivity_with_context(ctx); err != nil {
-		invalidateRPCClient(rpc_client, newRPC)
+		// The dial succeeded and only the probe failed, so mark the daemon
+		// offline but leave the client installed. Callers that log the error
+		// and carry on regardless still hold a usable client, as they did
+		// before this path existed; the loop redials because isConnected() is
+		// now false.
+		setConnected(false)
 		return err
 	}
 	return nil

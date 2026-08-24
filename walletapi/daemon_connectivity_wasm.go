@@ -114,7 +114,9 @@ func connectWithContext(ctx context.Context, endpoint string) (err error) {
 	// if daemon connection breaks or comes live again
 	setConnected(true)
 	if err = test_connectivity(); err != nil {
-		invalidateRPCClient(rpc_client, newRPC)
+		// Mirrors the non-wasm path: the dial succeeded and only the probe
+		// failed, so mark the daemon offline but leave the client installed.
+		setConnected(false)
 		return err
 	}
 	return nil
