@@ -296,8 +296,8 @@ func (w *Wallet_Memory) TransferPayload0WithOptions(transfers []rpc.Transfer, ri
 
 	// TODO, we should check nonce for base token and other tokens at the same time
 	// right now, we are probably using a bit of luck here
-	if daemon_topoheight >= int64(noncetopo)+3 { // if wallet has not been recently used, increase probability  of user's tx being successfully mined
-		topoheight = daemon_topoheight - 3
+	if getDaemonTopoHeight() >= int64(noncetopo)+3 { // if wallet has not been recently used, increase probability  of user's tx being successfully mined
+		topoheight = getDaemonTopoHeight() - 3
 	}
 
 	_, _, block_hash, self_e, _ = w.GetEncryptedBalanceAtTopoHeight(transfers[0].SCID, topoheight, w.GetAddress().String())
