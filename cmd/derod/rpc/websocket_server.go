@@ -226,13 +226,14 @@ func (r *RPCServer) Run() {
 
 	if os.Getenv("DISABLE_RUNTIME_PROFILE") == "1" { // daemon must have been started with DISABLE_RUNTIME_PROFILE=1
 		logger.Info("runtime profiling is disabled")
-	} else { // Register pprof handlers individually if required
-
+	} else if host, _, _ := net.SplitHostPort(default_address); net.ParseIP(host).IsLoopback() { // only expose pprof on loopback binds; on public binds it leaks argv/paths and allows profile/trace DoS
 		r.mux.HandleFunc("/debug/pprof/", pprof.Index)
 		r.mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 		r.mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 		r.mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		r.mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	} else {
+		logger.Info("runtime profiling disabled on non-loopback bind", "address", default_address)
 	}
 
 	go Notify_Block_Addition()     // process all blocks
