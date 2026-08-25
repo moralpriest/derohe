@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/bits"
+	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -47,6 +48,14 @@ type sync_progress struct {
 }
 
 var state sync_progress
+
+func GetSyncProgress() (height, chunk int64, step uint) {
+	return state.Height, state.Chunk, state.Step
+}
+
+func IsBootstrapActive() bool {
+	return state.Height != 0 || state.Step != 0
+}
 
 func (connection *Connection) bootstrap_fail(msg error) {
 	connection.logger.Error(msg, "Bootstrap failed")
@@ -120,7 +129,12 @@ func (connection *Connection) bootstrap_chain() error {
 			// chunk can't head-of-line-block chunks that already finished -- chunk
 			// writes are commutative (disjoint key ranges into the same tree), so
 			// there is no ordering requirement here, unlike sync_chain's block adds.
-			const pipeline_window = 16
+			pipeline_window := int64(runtime.GOMAXPROCS(0))
+			if pipeline_window < 1 {
+				pipeline_window = 1
+			} else if pipeline_window > 32 {
+				pipeline_window = 32
+			}
 
 			type indexed_result struct {
 				index int64
@@ -317,7 +331,12 @@ func (connection *Connection) bootstrap_chain() error {
 					return sc_fetch_result{key: key, keys: all_keys, values: all_values}
 				}
 
-				const sc_pipeline_window = 16
+				sc_pipeline_window := runtime.GOMAXPROCS(0)
+				if sc_pipeline_window < 1 {
+					sc_pipeline_window = 1
+				} else if sc_pipeline_window > 32 {
+					sc_pipeline_window = 32
+				}
 				sc_results := make(chan sc_fetch_result, sc_pipeline_window)
 				launch := func(idx int) {
 					go func() { sc_results <- fetch_one_sc(ts_response.Keys[idx]) }()
