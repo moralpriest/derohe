@@ -42,15 +42,30 @@ import (
 // if after bootstraping the chain can continousky sync for few minutes, this means we have got the job done
 
 type sync_progress struct {
-	Step   uint
-	Chunk  int64
-	Height int64
+	Step       uint
+	Chunk      int64
+	Height     int64
+	ChunksEstm int64
 }
 
 var state sync_progress
 
 func GetSyncProgress() (height, chunk int64, step uint) {
 	return state.Height, state.Chunk, state.Step
+}
+
+func GetBootstrapProgress() (progress float64, chunk, chunksEstm int64, step uint) {
+	if state.ChunksEstm <= 0 {
+		return 0, state.Chunk, state.ChunksEstm, state.Step
+	}
+	p := float64(state.Chunk) / float64(state.ChunksEstm)
+	if p < 0 {
+		p = 0
+	}
+	if p > 1 {
+		p = 1
+	}
+	return p, state.Chunk, state.ChunksEstm, state.Step
 }
 
 func IsBootstrapActive() bool {
@@ -108,6 +123,7 @@ func (connection *Connection) bootstrap_chain() error {
 
 		chunksize := int64(640)
 		chunks_estm := response.KeyCount / chunksize
+		state.ChunksEstm = chunks_estm
 		chunks := int64(1) // chunks need to be in power of 2
 		path_length := 0
 		for chunks < chunks_estm {
@@ -225,6 +241,7 @@ func (connection *Connection) bootstrap_chain() error {
 	{ // fetch and commit SC tree
 		chunksize := int64(640)
 		chunks_estm := response.SCKeyCount / chunksize
+		state.ChunksEstm = chunks_estm
 		chunks := int64(1) // chunks need to be in power of 2
 		path_length := 0
 		for chunks < chunks_estm {
