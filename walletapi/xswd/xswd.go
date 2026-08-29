@@ -45,34 +45,41 @@ func (app *ApplicationData) IsRequesting() bool {
 }
 
 type RPCResponse struct {
-	JsonRPC string      `json:"jsonrpc"`
-	ID      string      `json:"id"`
-	Result  interface{} `json:"result,omitempty"`
-	Error   interface{} `json:"error,omitempty"`
+	JsonRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id,omitempty"`
+	Result  interface{}     `json:"result,omitempty"`
+	Error   interface{}     `json:"error,omitempty"`
+}
+
+// rawRequestID returns the request id in its original JSON form (e.g. `"1"`
+// for a string id, `1` for a number). jrpc2 stores the id as raw JSON and
+// Request.ID() returns it verbatim, so echoing it back through a string field
+// double-encodes string ids (`"\"1\""`), which TELA apps never match when
+// correlating responses. Echoing the raw bytes keeps string and number ids
+// identical to what the client sent.
+func rawRequestID(request *jrpc2.Request) json.RawMessage {
+	if request == nil {
+		return nil
+	}
+	raw := request.ID()
+	if raw == "" {
+		return nil
+	}
+	return json.RawMessage(raw)
 }
 
 func ResponseWithError(request *jrpc2.Request, err *jrpc2.Error) RPCResponse {
-	var id string
-	if request != nil {
-		id = request.ID()
-	}
-
 	return RPCResponse{
 		JsonRPC: "2.0",
-		ID:      id,
+		ID:      rawRequestID(request),
 		Error:   err,
 	}
 }
 
 func ResponseWithResult(request *jrpc2.Request, result interface{}) RPCResponse {
-	var id string
-	if request != nil {
-		id = request.ID()
-	}
-
 	return RPCResponse{
 		JsonRPC: "2.0",
-		ID:      id,
+		ID:      rawRequestID(request),
 		Result:  result,
 	}
 }
@@ -838,13 +845,45 @@ func (x *XSWD) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if x.HasApplicationId(app_data.Id) {
-		x.logger.Info("App ID is already used", "ID", app_data.Name)
-		conn.WriteJSON(AuthorizationResponse{
-			Message:  "App ID is already used",
-			Accepted: false,
-		})
+		// Same-origin reconnect: allow a TELA app to replace its own stale
+		// WebSocket when the browser kills the old one on app-switch (Android)
+		// or manual retry. This is safe because we compare the origin string
+		// (Url) that is validated against the HTTP Origin header in addApplication.
+		// Cross-origin ID squatting remains rejected.
+		newOrigin := strings.TrimSpace(app_data.Url)
+		if newOrigin == "" {
+			newOrigin = strings.TrimSpace(app_data.Name)
+		}
+		var sameOrigin bool
+		var existingApp *ApplicationData
+		x.Lock()
+		for _, a := range x.applications {
+			if strings.EqualFold(a.Id, app_data.Id) {
+				oldOrigin := strings.TrimSpace(a.Url)
+				if oldOrigin == "" {
+					oldOrigin = strings.TrimSpace(a.Name)
+				}
+				if newOrigin != "" && strings.EqualFold(oldOrigin, newOrigin) {
+					sameOrigin = true
+					copyA := a
+					existingApp = &copyA
+				}
+				break
+			}
+		}
+		x.Unlock()
+		if sameOrigin && existingApp != nil {
+			x.RemoveApplication(existingApp)
+			x.logger.Info("Replaced stale connection with same ID+origin", "ID", app_data.Id, "origin", newOrigin)
+		} else {
+			x.logger.Info("App ID is already used", "ID", app_data.Name)
+			conn.WriteJSON(AuthorizationResponse{
+				Message:  "App ID is already used",
+				Accepted: false,
+			})
 
-		return
+			return
+		}
 	}
 
 	connection := new(Connection)
