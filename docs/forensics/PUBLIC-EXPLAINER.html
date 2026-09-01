@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The DERO Double-Spend: What Happened, What It Created, and Why It Cannot Happen Again</title>
+<style>
+:root{
+  color-scheme: dark light;
+  --bg:#0B1016; --surface:#121A22; --surface-2:#18232D;
+  --line:#223140; --line-strong:#33475B;
+  --ink:#DCE7F0; --ink-soft:#93A6B8; --ink-faint:#647A8E;
+  --accent:#3FD0E0; --accent-dim:#1D8A99; --accent-wash:rgba(63,208,224,.10);
+  --on-accent:#06171B;
+  --good:#4FBF8B; --warn:#D9A33C; --crit:#E5484D;
+  --font-sans:ui-sans-serif,"Inter var","Inter","Helvetica Neue",Arial,system-ui,sans-serif;
+  --font-mono:ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  --radius:4px; --measure:66ch;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#F2F5F8; --surface:#FFFFFF; --surface-2:#E9EFF4;
+    --line:#D3DEE7; --line-strong:#A9BCCB;
+    --ink:#101922; --ink-soft:#4A6273; --ink-faint:#6B8394;
+    --accent:#0E7C8C; --accent-dim:#0A5D69; --accent-wash:rgba(14,124,140,.08);
+    --on-accent:#FFFFFF; --good:#1F7A52; --warn:#8A6412; --crit:#B3282D;
+  }
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#F2F5F8; --surface:#FFFFFF; --surface-2:#E9EFF4;
+  --line:#D3DEE7; --line-strong:#A9BCCB;
+  --ink:#101922; --ink-soft:#4A6273; --ink-faint:#6B8394;
+  --accent:#0E7C8C; --accent-dim:#0A5D69; --accent-wash:rgba(14,124,140,.08);
+  --on-accent:#FFFFFF; --good:#1F7A52; --warn:#8A6412; --crit:#B3282D;
+}
+@media print{
+  :root{
+    color-scheme: light;
+    --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#F2F5F8;
+    --line:#C7D4DE; --line-strong:#8FA6B7;
+    --ink:#0B1016; --ink-soft:#3C5566; --ink-faint:#5E7688;
+    --accent:#0A5D69; --accent-dim:#084853; --accent-wash:rgba(10,93,105,.06);
+    --on-accent:#FFFFFF; --good:#155F3F; --warn:#6E4E0D; --crit:#8E1F23;
+  }
+}
+*,*::before,*::after{ box-sizing:border-box; }
+body{ margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--font-sans); font-size:17px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+.wrap{ max-width:860px; margin:0 auto; padding:56px 28px 96px; }
+.eyebrow{ font-family:var(--font-mono); font-size:12px; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--accent); margin:0 0 18px; display:flex; align-items:center; gap:.6em; }
+.eyebrow::before{ content:"\25A9"; color:var(--accent-dim); }
+.rule{ height:1px; border:0; margin:0;
+  background:linear-gradient(90deg, var(--accent) 0%, var(--line) 42%, transparent 100%); }
+h1{ font-size:38px; line-height:1.12; letter-spacing:-.02em; font-weight:650; margin:0 0 14px; text-wrap:balance; }
+.standfirst{ font-size:20px; line-height:1.5; color:var(--ink-soft); margin:0 0 24px; max-width:var(--measure); }
+.meta{ display:flex; flex-wrap:wrap; gap:6px 22px; margin:22px 0 0;
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.06em; color:var(--ink-faint); text-transform:uppercase; }
+.meta b{ color:var(--ink-soft); font-weight:500; }
+h2{ font-size:23px; line-height:1.25; letter-spacing:-.01em; font-weight:620; margin:52px 0 4px; text-wrap:balance; }
+h2 + .rule{ margin-bottom:18px; }
+p{ margin:0 0 16px; max-width:var(--measure); text-wrap:pretty; }
+strong{ font-weight:640; color:var(--ink); }
+code{ font-family:var(--font-mono); font-size:.86em; background:var(--surface-2);
+  border:1px solid var(--line); border-radius:3px; padding:.1em .35em; }
+figure{ margin:26px 0; }
+.figure-scroll{ overflow-x:auto; }
+.figure-scroll > svg{ display:block; max-width:100%; height:auto; }
+figcaption{ margin-top:12px; font-size:14px; line-height:1.55; color:var(--ink-soft); max-width:var(--measure); }
+.note{ margin:22px 0; padding:14px 18px; border-radius:var(--radius); background:var(--surface);
+  border:1px solid var(--line); border-left:2px solid var(--accent); font-size:16px; }
+.note.warn{ border-left-color:var(--warn); }
+.note .label{ font-family:var(--font-mono); font-size:11.5px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--ink-faint); display:block; margin-bottom:6px; }
+.note > :last-child{ margin-bottom:0; }
+.compare{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:24px 0; }
+.qcard{ border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); padding:18px 20px; }
+.qcard .q{ font-family:var(--font-mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 12px; }
+.qcard .ans{ font-size:34px; font-weight:650; line-height:1; margin:0 0 12px; letter-spacing:-.01em; }
+.qcard .num{ font-family:var(--font-mono); font-size:14px; color:var(--ink); margin:0 0 8px; }
+.qcard .why{ font-size:14px; line-height:1.5; color:var(--ink-soft); margin:0; }
+.qcard.yes{ border-left:3px solid var(--warn); } .qcard.yes .ans{ color:var(--warn); }
+.qcard.no{ border-left:3px solid var(--good); } .qcard.no .ans{ color:var(--good); }
+@media(max-width:600px){ .compare{ grid-template-columns:1fr; } }
+table{ border-collapse:collapse; width:100%; margin:22px 0; font-size:14.5px; }
+caption{ caption-side:bottom; margin-top:10px; font-size:14px; line-height:1.55;
+  color:var(--ink-soft); text-align:left; max-width:var(--measure); }
+th,td{ text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); }
+thead th{ font-family:var(--font-mono); font-size:11.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--ink-faint); font-weight:500; border-bottom:1px solid var(--line-strong); }
+td.num,th.num{ text-align:right; font-family:var(--font-mono); font-size:13.5px; white-space:nowrap; }
+td.mono{ font-family:var(--font-mono); font-size:13px; }
+tbody tr:last-child td{ border-bottom:0; }
+tfoot td{ border-top:1px solid var(--line-strong); border-bottom:0; font-weight:600; }
+.foot{ margin:64px 0 0; padding-top:20px; border-top:1px solid var(--line);
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.06em; color:var(--ink-faint); line-height:1.7; }
+.legend{ display:flex; flex-wrap:wrap; gap:8px 20px; margin:0 0 8px; font-size:13px; color:var(--ink-soft); }
+.legend span{ display:flex; align-items:center; gap:7px; }
+.swatch{ width:12px; height:12px; border-radius:2px; display:inline-block; }
+@media (max-width:640px){ .wrap{ padding:36px 18px 72px; } h1{ font-size:27px; } }
+
+.toc{ border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:var(--radius); padding:14px 18px; margin:26px 0; }
+.toc ol{ margin:8px 0 0; padding-left:20px; columns:2; column-gap:28px; }
+.toc li{ margin:3px 0; font-size:14px; break-inside:avoid; }
+.toc a{ color:var(--ink-soft); text-decoration:none; border-bottom:1px solid var(--line); }
+.toc a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
+.big{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:26px 0; }
+.big .c{ border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:var(--radius);
+  background:var(--surface); padding:16px 18px; }
+.big .c.forensic{ border-left-color:var(--warn); } .big .c.sum{ border-left-color:var(--crit); }
+.big .k{ font-family:var(--font-mono); font-size:11.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--ink-faint); margin:0 0 10px; }
+.big .v{ font-family:var(--font-mono); font-size:21px; color:var(--ink); margin:0 0 10px; }
+.big .p{ font-size:13.5px; line-height:1.5; color:var(--ink-soft); margin:0; }
+@media(max-width:720px){ .big{ grid-template-columns:1fr; } }
+pre{ font-family:var(--font-mono); font-size:13px; background:var(--surface-2); border:1px solid var(--line);
+  border-left:2px solid var(--accent-dim); border-radius:var(--radius); padding:12px 14px; overflow-x:auto;
+  margin:18px 0; color:var(--ink); }
+.takeaways{ background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--accent);
+  border-radius:var(--radius); padding:18px 22px; margin:28px 0; }
+.takeaways h2{ margin:0 0 12px; font-size:15px; font-family:var(--font-mono); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink-faint); font-weight:500; }
+.takeaways ul{ margin:0; padding-left:20px; } .takeaways li{ margin-bottom:9px; line-height:1.55; }
+.takeaways li:last-child{ margin-bottom:0; }
+.keeper{ border:1px solid var(--accent-dim); border-radius:var(--radius); background:var(--accent-wash);
+  padding:18px 22px; margin:26px 0; font-size:18px; line-height:1.5; color:var(--ink); text-align:center; }
+.keeper b{ color:var(--accent); font-weight:640; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">DERO &middot; THE DOUBLE-SPEND, EXPLAINED &middot; 2026-09-01</p>
+    <h1>The exploit was real, it is fixed, and here is exactly what it created.</h1>
+    <p class="standfirst">
+      A bug let the chain apply the same transaction twice, which handed an attacker real spendable coins
+      before the August hard fork closed it. That is not in dispute here and this page does not soften it.
+      What follows is the mechanism, the amounts, the arithmetic that ties them together, and an honest
+      account of which parts nobody can see.
+    </p>
+    <hr class="rule">
+    <div class="meta">
+      <span><b>Created</b> 23,886,517.3 DERO</span>
+      <span><b>Burn of the same era, payer not provable</b> 5,000,000 DERO</span>
+      <span><b>Fixed</b> HF3 @ 7,504,640</span>
+    </div>
+  </header>
+
+  <aside class="takeaways">
+    <h2>The short version</h2>
+    <ul>
+      <li><strong>It happened.</strong> The same transaction ID sits in two canonical blocks, 7,471,053 and 7,471,055, both before the fork. That is the double-application, on chain, checkable by anyone in a minute.</li>
+      <li><strong>It created spendable coins.</strong> At least 23,886,517.3 DERO. These are valid balances that can be moved and sold. A burn of 5,000,000 was recorded on chain in the same era, but nothing on chain shows these wallets paid it.</li>
+      <li><strong>The ledger still balances</strong>, because every created coin is matched by an equal frozen negative in the account it was drawn from. Both facts are true at once, and that is the thing everyone argues past.</li>
+      <li><strong>The supply figure a node reports is not evidence either way.</strong> It is computed from the block height alone and never reads a balance. Anyone offering it as proof that nothing was created is mistaken, in good faith or otherwise.</li>
+      <li><strong>It cannot be repeated</strong>, and that is measured rather than asserted, with a mutation control showing precisely which check holds the line.</li>
+    </ul>
+  </aside>
+
+  <nav class="toc" aria-label="Contents">
+    <span class="label">On this page</span>
+    <ol>
+      <li><a href="#happened">What happened</a></li>
+      <li><a href="#mechanism">How one transfer became two</a></li>
+      <li><a href="#fixed">Why it cannot be repeated</a></li>
+      <li><a href="#contradictory">Why the numbers look contradictory</a></li>
+      <li><a href="#supply">What the supply number actually is</a></li>
+      <li><a href="#burn">Five million was burned, by someone the chain does not name</a></li>
+      <li><a href="#figures">The three figures that matter</a></li>
+      <li><a href="#check">Check it yourself</a></li>
+      <li><a href="#decide">What this leaves the project to decide</a></li>
+      <li><a href="#unknowns">What nobody can see</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="happened">What happened</h2>
+  <hr class="rule">
+  <p>
+    A proof-substitution bug made it possible to get one transaction applied to balances twice. The
+    transaction the community flagged, <code>2e2b49f2&hellip;b21269ac</code>, appears under the same ID in
+    two different canonical blocks about 26 seconds apart:
+  </p>
+
+  <div class="figure-scroll">
+    <table>
+      <thead><tr><th>Block</th><th>Block hash</th><th>Contains txid</th><th>On main chain</th></tr></thead>
+      <tbody>
+        <tr><td class="num">7,471,053</td><td><code>443d44c6&hellip;</code></td><td><code>2e2b49f2&hellip;b21269ac</code></td><td>yes</td></tr>
+        <tr><td class="num">7,471,055</td><td><code>a78e7263&hellip;</code></td><td><code>2e2b49f2&hellip;b21269ac</code></td><td>yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Neither block is an orphan or a side block, and both sit well before HF3 activated at 7,504,640. The
+    August hard fork closed the tampered-proof variant, and a plain replay is refused because the sender&rsquo;s
+    account nonce has already advanced, so no one can do this on the chain as it runs today.
+  </p>
+
+  <h2 id="mechanism">How one transfer became two</h2>
+  <hr class="rule">
+  <p>
+    A normal transfer moves 100 from a sender to a receiver. Applied twice, the receiver is credited
+    <strong>200</strong> and the sender is debited <strong>200</strong>. But the sender only had
+    100, so it drops to <strong>&minus;100</strong>. A negative balance cannot be spent, so that account is
+    dead. Watch the three columns: the two balances move wildly, the total never does.
+  </p>
+
+  <figure>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--accent)"></span> receiver (spendable)</span>
+      <span><span class="swatch" style="background:var(--accent-dim)"></span> sender</span>
+      <span><span class="swatch" style="background:var(--warn)"></span> bricked (negative, unspendable)</span>
+    </div>
+    <div class="figure-scroll">
+    <svg viewBox="0 0 720 340" role="img" aria-label="Grouped bar chart. Before: sender +100, receiver 0. Normal transfer: sender 0, receiver +100. Applied twice: sender minus 100 (below zero, bricked), receiver +200. In all three the total of the two balances stays 100." xmlns="http://www.w3.org/2000/svg">
+      <!-- zero axis at y=190 -->
+      <line x1="60" y1="190" x2="690" y2="190" style="stroke:var(--line-strong)"></line>
+      <text x="52" y="194" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">0</text>
+
+      <!-- BEFORE (center 150) -->
+      <rect x="102" y="135" width="44" height="55" style="fill:var(--accent-dim)"></rect>
+      <text x="124" y="128" text-anchor="middle" style="fill:var(--ink);font-family:var(--font-mono);font-size:11px">+100</text>
+      <text x="124" y="182" text-anchor="middle" style="fill:var(--on-accent);font-family:var(--font-mono);font-size:10px">S</text>
+      <text x="176" y="205" text-anchor="middle" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">R 0</text>
+      <text x="150" y="262" text-anchor="middle" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">before</text>
+      <text x="150" y="286" text-anchor="middle" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">total 100</text>
+
+      <!-- NORMAL (center 360) -->
+      <text x="322" y="205" text-anchor="middle" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">S 0</text>
+      <rect x="364" y="135" width="44" height="55" style="fill:var(--accent)"></rect>
+      <text x="386" y="128" text-anchor="middle" style="fill:var(--ink);font-family:var(--font-mono);font-size:11px">+100</text>
+      <text x="386" y="182" text-anchor="middle" style="fill:var(--on-accent);font-family:var(--font-mono);font-size:10px">R</text>
+      <text x="360" y="262" text-anchor="middle" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">normal transfer</text>
+      <text x="360" y="286" text-anchor="middle" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">total 100</text>
+
+      <!-- APPLIED TWICE (center 570) -->
+      <rect x="522" y="190" width="44" height="55" style="fill:var(--warn)"></rect>
+      <text x="544" y="262" text-anchor="middle" style="fill:var(--warn);font-family:var(--font-mono);font-size:11px">&minus;100</text>
+      <text x="544" y="182" text-anchor="middle" style="fill:var(--warn);font-family:var(--font-mono);font-size:10px">S bricked</text>
+      <rect x="574" y="80" width="44" height="110" style="fill:var(--accent)"></rect>
+      <text x="596" y="73" text-anchor="middle" style="fill:var(--ink);font-family:var(--font-mono);font-size:11px">+200</text>
+      <text x="596" y="182" text-anchor="middle" style="fill:var(--on-accent);font-family:var(--font-mono);font-size:10px">R</text>
+      <text x="570" y="300" text-anchor="middle" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">applied twice</text>
+      <text x="570" y="324" text-anchor="middle" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">total STILL 100 (200 &minus; 100)</text>
+    </svg>
+    </div>
+    <figcaption>
+      The receiver doubles to +200, real and spendable. The sender is driven to &minus;100 and frozen. Add
+      the two and it is still 100, exactly what was there before. That extra +100 of spendable coin, hidden
+      behind an equal &minus;100 of dead debt, is the whole trick, on every hop.
+    </figcaption>
+  </figure>
+
+  <p>
+    The same thing with the real anchor amount. A single application moves 1,194,726.1 DERO once; the
+    exploit applied it twice.
+  </p>
+
+  <div class="figure-scroll">
+    <table>
+      <thead><tr><th>Balance</th><th class="num">Before</th><th class="num">Normal tx</th><th class="num">Applied twice</th></tr></thead>
+      <tbody>
+        <tr><td>Sender</td><td class="num">1,194,726.1</td><td class="num">0</td><td class="num"><span style="color:var(--warn)">&minus;1,194,726.1</span></td></tr>
+        <tr><td>Receiver</td><td class="num">0</td><td class="num">1,194,726.1</td><td class="num"><span style="color:var(--warn)">2,389,452.2</span></td></tr>
+        <tr><td><strong>Total</strong></td><td class="num">1,194,726.1</td><td class="num">1,194,726.1</td><td class="num">1,194,726.1</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="label">The picture, if you want one</span>
+    <p>
+      A cheque that clears, drawn on an account that is closed and overdrawn. The cash spends perfectly
+      well; the account behind it is dead and will never be collected. Every created coin is that cheque,
+      paired with a frozen negative of exactly its size. And because dead debt has no ceiling, this can
+      pile up past the total number of coins that were ever issued.
+    </p>
+  </div>
+
+  <p class="keeper">
+    Spendable money with a <b>dead twin</b>: real to spend, invisible to the total, unlimited because dead
+    debt has no cap.
+  </p>
+
+  <div class="note warn">
+    <span class="label">Real, not a glitch</span>
+    <p>
+      These coins passed the chain&rsquo;s own proofs. They sit in valid accounts and they can genuinely be
+      moved and sold. Nothing here is a rendering bug or a mislabelled field, and treating it as one is the
+      fastest way to lose an argument with someone who has read the chain.
+    </p>
+  </div>
+
+  <p>
+    How the second copy reached a block is a separate question from what it did to the ledger, and for an
+    operator it is the more alarming half. A DERO node will not re-admit a transaction it has already seen
+    mined, and a miner will not select one that appeared in the previous twenty blocks. So these second
+    copies did not come from stock software. Each was placed by a modified block producer, carrying a
+    substituted proof that flips which half of the ring the replay check inspects. Somebody was running
+    that producer on mainnet for six days. The source-level detail, with the exact guards and line numbers, is not published on this page.
+  </p>
+
+  <h2 id="fixed">Why it cannot be repeated</h2>
+  <hr class="rule">
+  <p>
+    <strong>A byte-identical, already-mined transaction forced back into a new block is refused. But
+    the thing that refuses it is a pre-HF3 replay check.</strong> The natural
+    assumption that HF3 closed re-inclusion is wrong. HF3 closed the <em>tampered</em> variant. The plain
+    replay is caught because the sender&rsquo;s account nonce has already advanced, so the replay&rsquo;s
+    reference nonce is stale and the block is rejected.
+  </p>
+  <p>
+    Measured on the simulator under the shipped post-HF3 rules. The transfer is 5 atomic units, the
+    receiver starts at 100,000,000, and every row is the real return of <code>Add_Complete_Block</code>
+    with balances read back off the tree.
+  </p>
+
+  <div class="figure-scroll">
+    <table>
+      <thead><tr><th>Control</th><th>Presented</th><th>Proof path</th><th>Nonce check</th><th>Receiver balance</th><th>Applied</th></tr></thead>
+      <tbody>
+        <tr><td>C1: honest, once</td><td>genuine</td><td>ran, cached</td><td>ok</td><td><code>100000000 &rarr; 100000005</code></td><td>1&times; (+5)</td></tr>
+        <tr><td>C2: tampered, same ID</td><td>proof field altered (<code>f[0]=1</code>)</td><td>not reached</td><td>not reached</td><td>unchanged</td><td>0, rejected</td></tr>
+        <tr><td>C3: identical replay</td><td>byte-identical</td><td>cache hit, <strong>skipped</strong></td><td>Invalid Nonce (exp 2, got 0)</td><td>stays <code>100000005</code></td><td>1&times;, no double</td></tr>
+        <tr><td>C4: replay, nonce neutered</td><td>byte-identical</td><td>cache hit, <strong>skipped</strong></td><td>disabled (mutation)</td><td><code>100000005 &rarr; 100000010</code></td><td>2&times; (+10)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    C4 is the control that makes the rest mean something: disable that one nonce comparison, change nothing
+    else, and the same replay is credited twice from a single transfer. That proves the comparison is what
+    holds the line. The whole table was re-run at <strong>ring size 16</strong> and reproduces exactly, so
+    it is not a ring-2 artefact. The worry that HF3 was insufficient did not hold up.
+  </p>
+
+  <h2 id="contradictory">Why the numbers look contradictory</h2>
+  <hr class="rule">
+  <p>
+    Do that doubling 46 times across four chained <em>ladders</em>, each one a run of fresh accounts where the doubled output of one hop funds the next, and the created spendable adds up to about
+    <strong>23.9M DERO</strong>. So do the frozen negatives, coin for coin. Add every account on the chain
+    together and the two sides cancel, so the ledger&rsquo;s own arithmetic is undisturbed while 23.9M of
+    real spendable coins sit above it.
+  </p>
+
+  <figure>
+    <div class="figure-scroll">
+    <svg viewBox="0 0 740 140" role="img" aria-label="Horizontal chain. 9.9 DERO of outside money enters ladder 4, which creates 2,389,484.8 and passes 100,000 to ladder 3, which creates 3,079,599.8 and passes 1,000 to ladder 2, which creates 8,187,897.4 and passes 10,000 to ladder 1, which creates 10,229,535.3." xmlns="http://www.w3.org/2000/svg"><defs><marker id="fh" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" style="fill:var(--ink-faint)"></path></marker></defs><text x="26" y="28" style="fill:var(--good);font-family:var(--font-mono);font-size:11.5px">in: 9.9 DERO of real money</text><rect x="26" y="46" width="150" height="52" rx="4" style="fill:var(--surface);stroke:var(--accent)"></rect><text x="101" y="68" text-anchor="middle" style="fill:var(--accent);font-family:var(--font-mono);font-size:12px">ladder 4</text><text x="101" y="86" text-anchor="middle" style="fill:var(--ink);font-family:var(--font-mono);font-size:11px">+2,389,484.8</text><path d="M178,72 L202,72" style="fill:none;stroke:var(--ink-faint)" marker-end="url(#fh)"></path><text x="190" y="64" text-anchor="middle" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:10.5px">100,000</text><rect x="204" y="46" width="150" height="52" rx="4" style="fill:var(--surface);stroke:var(--accent)"></rect><text x="279" y="68" text-anchor="middle" style="fill:var(--accent);font-family:var(--font-mono);font-size:12px">ladder 3</text><text x="279" y="86" text-anchor="middle" style="fill:var(--ink);font-family:var(--font-mono);font-size:11px">+3,079,599.8</text><path d="M356,72 L380,72" style="fill:none;stroke:var(--ink-faint)" marker-end="url(#fh)"></path><text x="368" y="64" text-anchor="middle" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:10.5px">1,000</text><rect x="382" y="46" width="150" height="52" rx="4" style="fill:var(--surface);stroke:var(--accent)"></rect><text x="457" y="68" text-anchor="middle" style="fill:var(--accent);font-family:var(--font-mono);font-size:12px">ladder 2</text><text x="457" y="86" text-anchor="middle" style="fill:var(--ink);font-family:var(--font-mono);font-size:11px">+8,187,897.4</text><path d="M534,72 L558,72" style="fill:none;stroke:var(--ink-faint)" marker-end="url(#fh)"></path><text x="546" y="64" text-anchor="middle" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:10.5px">10,000</text><rect x="560" y="46" width="150" height="52" rx="4" style="fill:var(--surface);stroke:var(--accent)"></rect><text x="635" y="68" text-anchor="middle" style="fill:var(--accent);font-family:var(--font-mono);font-size:12px">ladder 1</text><text x="635" y="86" text-anchor="middle" style="fill:var(--ink);font-family:var(--font-mono);font-size:11px">+10,229,535.3</text><text x="26" y="122" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:10.5px">each ladder was seeded out of the one before it &#183; figures are value created from nothing</text></svg>
+    </div>
+    <figcaption>
+      The four ladders are one operation, not four. Ladder 4 ran first on 9.9 DERO of real money, and each
+      later ladder was started with a payment out of the one before it. So the whole of what follows grows
+      from that 9.9.
+    </figcaption>
+  </figure>
+
+  <figure>
+    <div class="figure-scroll">
+    <svg viewBox="0 0 720 300" role="img" aria-label="A mirror diagram. A flat central line is the sum of every account balance on the chain, unchanged. Above it a bar of plus 23.9 million spendable coins created. Below it an equal bar of minus 23.9 million bricked negatives. The two are equal and opposite, so the central line does not move." xmlns="http://www.w3.org/2000/svg">
+      <!-- top bar: spendable created -->
+      <rect x="150" y="46" width="420" height="100" style="fill:var(--accent-wash);stroke:var(--accent)"></rect>
+      <text x="360" y="90" text-anchor="middle" style="fill:var(--ink);font-family:var(--font-mono);font-size:18px">+23.9M</text>
+      <text x="360" y="112" text-anchor="middle" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">spendable coins created</text>
+      <text x="360" y="130" text-anchor="middle" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">real, movable, at the receiver accounts</text>
+
+      <!-- center line: total supply -->
+      <line x1="60" y1="150" x2="660" y2="150" style="stroke:var(--accent);stroke-width:2"></line>
+      <rect x="228" y="138" width="264" height="24" rx="4" style="fill:var(--surface);stroke:var(--line-strong)"></rect>
+      <text x="360" y="154" text-anchor="middle" style="fill:var(--ink);font-family:var(--font-mono);font-size:12px">SUM OF EVERY BALANCE</text>
+
+      <!-- bottom bar: bricked negatives -->
+      <rect x="150" y="154" width="420" height="100" style="fill:var(--warn);fill-opacity:.12;stroke:var(--warn)"></rect>
+      <text x="360" y="196" text-anchor="middle" style="fill:var(--warn);font-family:var(--font-mono);font-size:18px">&minus;23.9M</text>
+      <text x="360" y="218" text-anchor="middle" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">bricked negatives</text>
+      <text x="360" y="236" text-anchor="middle" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">stranded, can never be spent</text>
+
+      <!-- brace on the right -->
+      <path d="M584,46 L598,46 L598,254 L584,254" style="fill:none;stroke:var(--ink-faint);stroke-width:1"></path>
+      <text x="606" y="146" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">sum of</text>
+      <text x="606" y="160" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">both =</text>
+      <text x="606" y="176" style="fill:var(--ink);font-family:var(--font-mono);font-size:11px">no change</text>
+    </svg>
+    </div>
+    <figcaption>
+      The middle line is every account balance added together. It does not move, because the created coins
+      and the dead debt are equal and opposite. What makes the top half dangerous is that only it can be
+      spent.
+    </figcaption>
+  </figure>
+
+  <p>
+    That is also why the created total can exceed every coin DERO has ever issued. For real coins that
+    would be impossible. It is possible here precisely because they are not backed by real coins.
+  </p>
+
+  <figure>
+    <div class="figure-scroll">
+    <svg viewBox="0 0 720 176" role="img" aria-label="Two horizontal bars. DERO coins issued by the schedule total 16.76 million. Exploit-created spendable is 23.9 million, a longer bar extending past it. The part beyond is created coin, matched by an equal frozen debt." xmlns="http://www.w3.org/2000/svg">
+      <!-- supply bar -->
+      <rect x="170" y="30" width="337" height="32" style="fill:var(--accent-wash);stroke:var(--accent)"></rect>
+      <text x="160" y="51" text-anchor="end" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">ever issued</text>
+      <text x="514" y="51" style="fill:var(--ink);font-family:var(--font-mono);font-size:12px">16.76M</text>
+      <!-- created bar -->
+      <rect x="170" y="86" width="480" height="32" style="fill:var(--warn);fill-opacity:.14;stroke:var(--warn)"></rect>
+      <text x="160" y="107" text-anchor="end" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">created</text>
+      <text x="658" y="107" style="fill:var(--warn);font-family:var(--font-mono);font-size:12px">23.9M</text>
+      <!-- supply-edge dashed line -->
+      <line x1="507" y1="20" x2="507" y2="140" style="stroke:var(--ink-faint);stroke-dasharray:4 3"></line>
+      <text x="507" y="16" text-anchor="middle" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:10px">all issued coins end here</text>
+      <!-- shadow bracket -->
+      <path d="M509,132 L509,138 L648,138 L648,132" style="fill:none;stroke:var(--warn)"></path>
+      <text x="578" y="158" text-anchor="middle" style="fill:var(--warn);font-family:var(--font-mono);font-size:11px">created coin, matched by frozen debt</text>
+    </svg>
+    </div>
+    <figcaption>
+      Everything to the right of the dashed line has no issued coin behind it. It is matched only by
+      frozen, negative accounts.
+    </figcaption>
+  </figure>
+
+  <div class="compare">
+    <div class="qcard yes">
+      <p class="q">Were spendable coins created?</p>
+      <p class="ans">Yes</p>
+      <p class="num">23,886,517.3, at least</p>
+      <p class="why">Double-credited into valid balances the holder can move or sell.</p>
+    </div>
+    <div class="qcard no">
+      <p class="q">Does the ledger still balance?</p>
+      <p class="ans">Yes</p>
+      <p class="num">matched pair by pair</p>
+      <p class="why">Each created coin is matched by an equal frozen debt, so the two sides cancel.</p>
+    </div>
+  </div>
+  <p style="font-size:15px;color:var(--ink-soft);max-width:var(--measure);">
+    Same event, two questions. One asks what exists and can be spent; the other asks whether the books tie
+    out. Yes to both, at the same time. Only one of those answers is reassuring, and it is the one about the books.
+  </p>
+
+  <div class="note">
+    <span class="label">So was it inflation?</span>
+    <p>
+      Of the issuance schedule: no. It was never altered, and that figure was never going to move whatever
+      happened. Of the ledger&rsquo;s balances: no. They still tie out, because the frozen debt cancels the
+      created coin. Of spendable coins: yes. About 23.9 million now exist that should not, and that is the
+      answer that matters to anyone holding or pricing DERO. &ldquo;They minted coins&rdquo; and
+      &ldquo;no inflation, the supply is intact&rdquo; are each one third of this, which is why the argument
+      never resolves. The honest statement is all three at once.
+    </p>
+  </div>
+
+  <h2 id="supply">What the supply number actually is</h2>
+  <hr class="rule">
+  <p>
+    This gets misused in both directions, so it is worth being exact. When a node answers
+    <code>DERO.GetInfo</code> with <code>total_supply</code>, this is the whole of what it does:
+  </p>
+  <pre>result.Total_Supply = blockchain.CalcSupply(uint64(chain.Get_Height()))
+result.Total_Supply = result.Total_Supply / 100000   // atomic units to DERO
+
+func CalcSupply(height uint64) uint64 {
+    supply := config.PREMINE
+    supply += 271739600            // one-time launch credit
+    for ... { supply += CalcBlockReward(epoch) * blocksInEpoch }
+    return supply
+}</pre>
+  <p>
+    The only input is the block height. It reads no balances, no transactions and no burns. It would have
+    printed the same figure whether this exploit happened or not, and it does not move when coins are
+    destroyed either. Recomputing it offline and finding a match shows two calculators agreeing, nothing
+    more. There is no balance census in the software, and on a chain where every account balance is
+    encrypted there is no obvious way to build one, so the supply can be neither proven correct nor
+    proven wrong by counting. What is left is transaction-level evidence, which is what the companion
+    document sets out in full.
+  </p>
+
+  <h2 id="burn">Five million was burned, by someone the chain does not name</h2>
+  <hr class="rule">
+  <p>
+    A transaction mined at block 7,539,913 carries a burn of exactly 500,000,000,000 atomic units. You
+    can read that number straight from the transaction, but that is not why it can be trusted: the chain
+    would have refused the transaction unless the coins had actually left the sender's balance, because it
+    checks the burned amount against a real deduction rather than taking the field on faith. That
+    is a fifth of everything the exploit made, gone permanently.
+    <a href="TRACKED-FLOW.html"><em>The Tracked Flow</em></a>, the companion record, breaks the remainder
+    down and draws the proportions to scale.
+  </p>
+
+  <div class="note warn">
+    <span class="label">More than has ever been mined</span>
+    <p>
+      At block 7,545,119 the schedule has issued <strong>16,756,595</strong>. Take out the
+      <strong>12,281,254</strong> premine and the one-time launch credit shown in the code above, and about
+      <strong>4,472,624</strong> DERO has ever been mined on this chain. A burn of five million is larger
+      than all of it put together, and close to a third of every DERO in existence. Because the chain
+      accepted the transaction, whoever sent it was holding at least that much in one wallet at that moment.
+    </p>
+    <p>
+      That is the reason to think the burn came from this operation. It is not proof of it. Nobody can show
+      the destroyed coins came from these wallets, because the burn conceals its sender among sixteen
+      candidates. Its size makes an innocent explanation hard to construct, and difficulty is not evidence.
+    </p>
+  </div>
+
+  <div class="note">
+    <span class="label">Almost none of the created coin is cashable</span>
+    <p>
+      The created total is a book figure, not a cash-out. A market that trades around seventeen million coins
+      cannot absorb twenty-four million without the price collapsing first, so what was actually realised is
+      far smaller. How much smaller is unknowable, because these amounts are encrypted, which means nobody can
+      put a verified number on it, including the people claiming they can.
+    </p>
+  </div>
+
+  <div class="note">
+    <span class="label">There is nobody to pay back</span>
+    <p>
+      A question that keeps coming up: can the rest be returned? There is no one to return it to. These
+      coins did not come out of anybody&rsquo;s wallet. They were conjured, and matched by an equal negative
+      in the account the same act froze, so there is no victim to reimburse and no previous owner to
+      restore. That leaves exactly one way to take them out of circulation, which is to destroy them, and
+      five million already has been. Whatever is still outstanding stays outstanding until someone chooses
+      to burn it too.
+    </p>
+  </div>
+
+  <div class="note">
+    <span class="label">Why the amounts are readable at all</span>
+    <p>
+      Only a fraction can be read, and only because these are pre-2025 transactions with a ring size of 2, whose
+      payload key is recoverable by brute force. DERO closed that hole over a year ago, so a transaction
+      from a current wallet keeps its amount private. That is what pins the attacker&rsquo;s tooling to
+      code from many releases back. The honest caveat: the double-application itself was a consensus bug
+      affecting every node regardless of transaction format. Old wallet code is why these particular amounts
+      are readable. It does not mean only old-wallet users were exposed, and it does not make the fix optional.
+    </p>
+    <p>
+      Worth saying what does <em>not</em> establish these figures: the <code>deroproof</code> strings that
+      circulate beside them. Such a string carries both its own declared amount and the value that amount
+      gets checked against, so one can be built to display any number at all and still show as verified.
+      What actually fixes an amount is the transaction itself, whose payload unscrambles into a clean,
+      canonical message under one value and into noise under every other.
+    </p>
+  </div>
+
+  <h2 id="figures">The three figures that matter</h2>
+  <hr class="rule">
+  <div class="big">
+    <div class="c">
+      <p class="k">Issued per schedule</p>
+      <p class="v">16,756,595</p>
+      <p class="p">What the emission schedule says has been minted by block 7,545,119. Exact and
+      recomputable, but arithmetic on the height rather than a count of anything.</p>
+    </div>
+    <div class="c forensic">
+      <p class="k">Created, less the burn</p>
+      <p class="v">18,886,517.3</p>
+      <p class="p">Made from nothing by the double-application, less the five million burned. That
+      subtraction assumes the burn came from these wallets, and nothing on chain shows that it did. A floor
+      either way: fourteen affected transactions cannot be read at all.</p>
+    </div>
+    <div class="c sum">
+      <p class="k">Spendable, roughly</p>
+      <p class="v">~35.6M</p>
+      <p class="p">The schedule figure plus the created coin less the burn. The first term is not a count of anything, as
+      the section above sets out, so treat this as a floor on what can circulate rather than a measurement.
+      It says the created coin sits on top of normal issuance. It does not say anyone has counted 35.6
+      million coins. Approximate in both directions: undecoded transactions push it up, coins stranded in
+      frozen accounts push it down.</p>
+    </div>
+  </div>
+
+  <h2 id="check">Check it yourself</h2>
+  <hr class="rule">
+  <ul>
+    <li><strong>The double inclusion:</strong> pull blocks <strong>7,471,053</strong> and
+    <strong>7,471,055</strong>. Both list <code>2e2b49f2&hellip;b21269ac</code> in their transaction set.
+    Same ID, two blocks.</li>
+    <li><strong>The burn:</strong> fetch <code>808342e3&hellip;3e7898</code> and look for
+    <code>8090cad2c60e</code> in the raw hex. That is a varint and it decodes to 500,000,000,000 atomic
+    units, exactly 5,000,000 DERO.</li>
+    <li><strong>The issuance schedule:</strong> <code>DERO.GetInfo</code> reports
+    <code>total_supply</code> 16,756,595 at block 7,545,119, rising 0.3075 per block. Read the section
+    above before treating that number as evidence of anything.</li>
+    <li><strong>The fix:</strong> HF3 activated at <strong>7,504,640</strong> on 2026-08-21. Both exploit
+    blocks sit about 33,500 blocks before it. Any node on 3.6.0-152 or later carries it.</li>
+    <li><strong>Every transaction:</strong> <a href="TRACKED-FLOW.html"><em>The Tracked Flow</em></a>
+    lists all 53 published transfers with full IDs, senders, receivers and amounts, so any row can be
+    checked against a node.</li>
+    <li><strong>How the counts fit together:</strong> DERO&rsquo;s own remediation list holds 75
+    transactions. 53 are published in full in <em>The Tracked Flow</em>, 14 more cannot be decoded, and the
+    remaining 8 are on the list for a different reason, a parity correction rather than a duplicate.
+    53 plus 14 plus 8 is the 75.</li>
+    <li><strong>A gap is a hop, not a missed doubling:</strong> the amounts settle it without decrypting
+    anything. Across a break, 149,340.9 is followed by 298,681.6, twice the previous rung less fees. Had a
+    doubling gone unrecorded the next figure would be four times the previous one. So the arithmetic says
+    exactly one exploit step happened between those two wallets, and the change of wallet says the coins
+    were walked to a fresh address on the way.</li>
+  </ul>
+
+  <h2 id="decide">What this leaves the project to decide</h2>
+  <hr class="rule">
+  <p>
+    Everything above is a matter of fact. What follows from it is not. The created coins are real, spendable,
+    and permanent unless someone burns them or returns them to the accounts they were drawn from, and nobody
+    can identify those accounts. So the question in front of DERO is not whether this happened. It is whether
+    coins that exist and can be sold should be counted in the figure the project publishes as its supply.
+  </p>
+  <p>
+    There are three answers and none of them is free. Leave the schedule figure alone and explain every time
+    what it does and does not count. Change what the daemon reports, which breaks the one thing that figure
+    is currently good for, namely stating the issuance schedule exactly. Or publish a second figure beside it
+    and keep it current as coins are burned or found. That is a governance call rather than a forensic one,
+    and this document does not make it.
+  </p>
+
+  <h2 id="unknowns">What nobody can see</h2>
+  <hr class="rule">
+  <p>
+    Parts of this are permanently out of reach, and saying so is better than implying a complete picture.
+    Every figure on this page is a floor.
+  </p>
+  <ul>
+    <li><strong>Fourteen affected transactions cannot be read at all.</strong> They pair a larger ring with
+    the <em>newer</em> payload format, the one added in 2025 to close the very weakness that makes the others
+    legible. Whatever they moved is in none of the totals here.</li>
+    <li><strong>Whether any of it was sold is not known.</strong> At least 408,774.564 left the ladders
+    towards an address that behaves like a deposit service, which is the only exit anyone has traced. What
+    happened to it after that is off-chain and invisible.</li>
+    <li><strong>Who paid the five million burn is concealed by design.</strong> The amount is real, the chain
+    binds it to coins that genuinely left a funded account; the sender sits behind a ring of sixteen.</li>
+    <li><strong>Who ran the modified block producer is not established.</strong> The second copies could not
+    have come from stock software, which is measured. The party behind them is not.</li>
+    <li><strong>The split of the value left behind is carried over, not verified here.</strong> The total is
+    measured. That about 4,308 DERO is change still sitting in wallets and about 1,248 DERO is stranded in
+    overdrawn accounts comes from separate work; only the sum is checked on this page. Nothing was destroyed
+    in the second case, because DERO carries an overdrawn account as a negative balance rather than clamping
+    it, so those coins cannot be spent again but they were not burned.</li>
+  </ul>
+  <p>
+    <a href="TRACKED-FLOW.html"><em>The Tracked Flow</em></a> sets each of these gaps against the specific
+    transactions where they occur.
+  </p>
+
+  <footer class="foot">
+    Block, transaction and issuance figures pulled live from a DERO daemon at tip 7,545,119 on 2026-08-29;
+    the burn read from the transaction and its amount confirmed bound to a real balance deduction, not
+    merely declared, by building the declared-but-unfunded forgery and watching consensus reject it. The behaviour of <code>total_supply</code> was read from
+    derohe source at <code>cmd/derod/rpc/rpc_dero_getinfo.go:82</code> and
+    <code>blockchain/supply.go</code>. Created and outstanding figures are the sum of the four decodable
+    ladders&rsquo; rungs from the published per-transaction list, recomputed independently; fourteen
+    further affected transactions could not be decoded, so every such figure is a floor. The re-inclusion
+    table was measured on the simulator under shipped post-HF3 rules with a mutation control. Exploit fixed
+    by HF3, live 2026-08-21.
+  </footer>
+
+</div>
+</body>
+</html>

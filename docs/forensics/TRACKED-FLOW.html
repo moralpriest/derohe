@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Tracked Flow: Every Published Transaction, Seed to Destination</title>
+<style>
+:root{
+  color-scheme: dark light;
+  --bg:#0B1016; --surface:#121A22; --surface-2:#18232D;
+  --line:#223140; --line-strong:#33475B;
+  --ink:#DCE7F0; --ink-soft:#93A6B8; --ink-faint:#647A8E;
+  --accent:#3FD0E0; --accent-dim:#1D8A99; --accent-wash:rgba(63,208,224,.10);
+  --on-accent:#06171B;
+  --good:#4FBF8B; --warn:#D9A33C; --crit:#E5484D;
+  --font-sans:ui-sans-serif,"Inter var","Inter","Helvetica Neue",Arial,system-ui,sans-serif;
+  --font-mono:ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  --radius:4px; --measure:66ch;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#F2F5F8; --surface:#FFFFFF; --surface-2:#E9EFF4;
+    --line:#D3DEE7; --line-strong:#A9BCCB;
+    --ink:#101922; --ink-soft:#4A6273; --ink-faint:#6B8394;
+    --accent:#0E7C8C; --accent-dim:#0A5D69; --accent-wash:rgba(14,124,140,.08);
+    --on-accent:#FFFFFF; --good:#1F7A52; --warn:#8A6412; --crit:#B3282D;
+  }
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#F2F5F8; --surface:#FFFFFF; --surface-2:#E9EFF4;
+  --line:#D3DEE7; --line-strong:#A9BCCB;
+  --ink:#101922; --ink-soft:#4A6273; --ink-faint:#6B8394;
+  --accent:#0E7C8C; --accent-dim:#0A5D69; --accent-wash:rgba(14,124,140,.08);
+  --on-accent:#FFFFFF; --good:#1F7A52; --warn:#8A6412; --crit:#B3282D;
+}
+@media print{
+  :root{
+    color-scheme: light;
+    --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#F2F5F8;
+    --line:#C7D4DE; --line-strong:#8FA6B7;
+    --ink:#0B1016; --ink-soft:#3C5566; --ink-faint:#5E7688;
+    --accent:#0A5D69; --accent-dim:#084853; --accent-wash:rgba(10,93,105,.06);
+    --on-accent:#FFFFFF; --good:#155F3F; --warn:#6E4E0D; --crit:#8E1F23;
+  }
+}
+*,*::before,*::after{ box-sizing:border-box; }
+body{ margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--font-sans); font-size:17px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+.wrap{ max-width:860px; margin:0 auto; padding:56px 28px 96px; }
+.eyebrow{ font-family:var(--font-mono); font-size:12px; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--accent); margin:0 0 18px; display:flex; align-items:center; gap:.6em; }
+.eyebrow::before{ content:"\25A9"; color:var(--accent-dim); }
+.rule{ height:1px; border:0; margin:0;
+  background:linear-gradient(90deg, var(--accent) 0%, var(--line) 42%, transparent 100%); }
+h1{ font-size:38px; line-height:1.12; letter-spacing:-.02em; font-weight:650; margin:0 0 14px; text-wrap:balance; }
+.standfirst{ font-size:20px; line-height:1.5; color:var(--ink-soft); margin:0 0 24px; max-width:var(--measure); }
+.meta{ display:flex; flex-wrap:wrap; gap:6px 22px; margin:22px 0 0;
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.06em; color:var(--ink-faint); text-transform:uppercase; }
+.meta b{ color:var(--ink-soft); font-weight:500; }
+h2{ font-size:23px; line-height:1.25; letter-spacing:-.01em; font-weight:620; margin:52px 0 4px; text-wrap:balance; }
+h2 + .rule{ margin-bottom:18px; }
+p{ margin:0 0 16px; max-width:var(--measure); text-wrap:pretty; }
+strong{ font-weight:640; color:var(--ink); }
+code{ font-family:var(--font-mono); font-size:.86em; background:var(--surface-2);
+  border:1px solid var(--line); border-radius:3px; padding:.1em .35em; }
+figure{ margin:26px 0; }
+.figure-scroll{ overflow-x:auto; }
+.figure-scroll > svg{ display:block; max-width:100%; height:auto; }
+figcaption{ margin-top:12px; font-size:14px; line-height:1.55; color:var(--ink-soft); max-width:var(--measure); }
+.note{ margin:22px 0; padding:14px 18px; border-radius:var(--radius); background:var(--surface);
+  border:1px solid var(--line); border-left:2px solid var(--accent); font-size:16px; }
+.note.warn{ border-left-color:var(--warn); }
+.note .label{ font-family:var(--font-mono); font-size:11.5px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--ink-faint); display:block; margin-bottom:6px; }
+.note > :last-child{ margin-bottom:0; }
+.compare{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:24px 0; }
+.qcard{ border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); padding:18px 20px; }
+.qcard .q{ font-family:var(--font-mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 12px; }
+.qcard .ans{ font-size:34px; font-weight:650; line-height:1; margin:0 0 12px; letter-spacing:-.01em; }
+.qcard .num{ font-family:var(--font-mono); font-size:14px; color:var(--ink); margin:0 0 8px; }
+.qcard .why{ font-size:14px; line-height:1.5; color:var(--ink-soft); margin:0; }
+.qcard.yes{ border-left:3px solid var(--warn); } .qcard.yes .ans{ color:var(--warn); }
+.qcard.no{ border-left:3px solid var(--good); } .qcard.no .ans{ color:var(--good); }
+@media(max-width:600px){ .compare{ grid-template-columns:1fr; } }
+table{ border-collapse:collapse; width:100%; margin:22px 0; font-size:14.5px; }
+caption{ caption-side:bottom; margin-top:10px; font-size:14px; line-height:1.55;
+  color:var(--ink-soft); text-align:left; max-width:var(--measure); }
+th,td{ text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); }
+thead th{ font-family:var(--font-mono); font-size:11.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--ink-faint); font-weight:500; border-bottom:1px solid var(--line-strong); }
+td.num,th.num{ text-align:right; font-family:var(--font-mono); font-size:13.5px; white-space:nowrap; }
+td.mono{ font-family:var(--font-mono); font-size:13px; }
+tbody tr:last-child td{ border-bottom:0; }
+tfoot td{ border-top:1px solid var(--line-strong); border-bottom:0; font-weight:600; }
+.foot{ margin:64px 0 0; padding-top:20px; border-top:1px solid var(--line);
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.06em; color:var(--ink-faint); line-height:1.7; }
+.legend{ display:flex; flex-wrap:wrap; gap:8px 20px; margin:0 0 8px; font-size:13px; color:var(--ink-soft); }
+.legend span{ display:flex; align-items:center; gap:7px; }
+.swatch{ width:12px; height:12px; border-radius:2px; display:inline-block; }
+@media (max-width:640px){ .wrap{ padding:36px 18px 72px; } h1{ font-size:27px; } }
+
+.tag{ display:inline-block; font-family:var(--font-mono); font-size:10px; letter-spacing:.08em;
+  text-transform:uppercase; padding:1px 6px; border-radius:2px; margin-right:5px; cursor:help; }
+.tag.gap{ background:rgba(217,163,60,.16); color:var(--warn); border:1px solid var(--warn); }
+.tag.leak{ background:rgba(229,72,77,.14); color:var(--crit); border:1px solid var(--crit); }
+.controls{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:20px 0 6px; }
+.controls input,.controls select{ font-family:var(--font-mono); font-size:13px; padding:7px 10px;
+  background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:var(--radius); }
+.controls input{ min-width:230px; }
+.controls .count{ font-family:var(--font-mono); font-size:12px; color:var(--ink-faint); }
+table.data{ font-size:13.5px; }
+table.data th{ cursor:pointer; user-select:none; white-space:nowrap; }
+table.data th::after{ content:"\2195"; opacity:.32; margin-left:5px; font-size:10px; }
+table.data th[aria-sort="ascending"]::after{ content:"\2191"; opacity:1; }
+table.data th[aria-sort="descending"]::after{ content:"\2193"; opacity:1; }
+table.data td{ padding:7px 10px; }
+table.data .txid, table.data .addr{ display:inline-block; max-width:16ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
+table.data .txid{ color:var(--accent); }
+table.data .txid:hover, table.data .addr:hover{ max-width:none; }
+.tbl-wrap{ max-height:560px; overflow:auto; border:1px solid var(--line); border-radius:var(--radius); }
+.tbl-wrap thead th{ position:sticky; top:0; background:var(--surface); z-index:1; }
+.ledger td:first-child{ color:var(--ink-soft); }
+.ledger tr.total td{ font-weight:650; color:var(--ink); }
+.ledger tr.resid td{ color:var(--ink-faint); font-size:13.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">DERO &middot; HF3 EXPLOIT &middot; THE COMPLETE TRACKED FLOW &middot; 2026-09-01</p>
+    <h1>Every transaction we can see, seed to destination.</h1>
+    <p class="standfirst">
+      Four ladders, 46 doublings, 53 published transactions, and one burn. It begins with
+      <strong>9.9 DERO</strong> of real money and ends with almost 24 million that never
+      existed. This is the whole money story as far as the chain and the published data will carry it,
+      including the parts that stop short. The accounting below balances exactly, and the note beside it
+      explains why that is less impressive than it looks. What actually carries the weight is underneath:
+      46 doubled amounts, each one recovered from its own transaction and checked against the chain.
+    </p>
+    <hr class="rule">
+    <div class="meta">
+      <span><b>Created</b> 23,886,517.3 DERO</span>
+      <span><b>Burned</b> 5,000,000</span>
+      <span><b>Created less the burn</b> 18,886,517.3</span>
+      <span><b>Transactions</b> 53 published + 14 undecoded</span>
+    </div>
+  </header>
+
+  <p style="font-size:15px;color:var(--ink-soft);max-width:var(--measure);">
+    This is the evidence half of a pair. For what the exploit was, how it worked and what it means, read
+    <a href="PUBLIC-EXPLAINER.html"><em>The DERO Double-Spend, Explained</em></a> first; this document is
+    the transaction record behind it.
+  </p>
+
+  <h2>The accounting</h2>
+  <hr class="rule">
+  <p>
+    Start from the 9.9 DERO that came in from outside, add the balance each later ladder inherited
+    from the one before it, add what the exploit made from nothing, subtract everything left behind along
+    the way, and you should land on what the four end wallets actually held. You do, exactly.
+  </p>
+
+  <table class="ledger">
+    <caption>
+      The full accounting. Every figure is derived from the maintainer&rsquo;s published per-transaction
+      list except the burn, which was decoded live from the transaction itself. Network fees are a rounding
+      error here, 0.00121 DERO per transfer and 0.05566 across all 46 rungs; what actually goes
+      missing is change left sitting in wallets, which is the line above.
+    </caption>
+    <thead>
+      <tr><th>Step</th><th>What it is</th><th class="num">DERO</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Outside money</td><td>ladder 4&rsquo;s seed, the only capital that came from anywhere else</td><td class="num">9.9</td></tr>
+      <tr><td>Recycled between ladders</td><td>each later ladder&rsquo;s starting balance, paid out of the one before it</td><td class="num">+ 110,899.7</td></tr>
+      <tr><td>Created</td><td>made from nothing by the doublings, summed across all 46 rungs</td><td class="num">+ 23,886,517.3</td></tr>
+      <tr><td>Left behind along the way</td><td>change that stayed in a wallet rather than moving to the next rung, across all 42 links; how it divides between change left in wallets and value driven below zero is not verified</td><td class="num">&minus; 5,556.1</td></tr>
+      <tr class="total"><td>Should be in the end wallets</td><td>the four lines above</td><td class="num">23,991,870.8</td></tr>
+      <tr class="total"><td>Actually in the end wallets</td><td>defined as twice each ladder&rsquo;s top rung</td><td class="num">23,991,870.8</td></tr>
+      <tr class="resid"><td>Difference</td><td>zero, and necessarily so; see the note below</td><td class="num">0.0</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <span class="label">Why that last row proves less than it looks</span>
+    <p>
+      The final two rows agree to the atomic unit, and they were always going to. The end-wallet total is
+      <strong>defined</strong> as twice each ladder&rsquo;s top rung, so seeds plus created minus leakage can
+      only land on it. That confirms the arithmetic is consistent. It is not independent evidence that the
+      amounts are right. The evidence for those sits one level down: each of the 46 doubled amounts was
+      recovered from its own transaction and tested against the chain, with a control at one atomic unit
+      either side.
+    </p>
+  </div>
+
+  <div class="note">
+    <span class="label">Two right answers to &ldquo;how much is still out there&rdquo;</span>
+    <p>
+      <strong>18,886,517.3</strong> is what came from nothing less the burn, and it is the right figure only
+      if the burn came from these wallets, which nothing on chain shows. <strong>18,991,870.8</strong> is the total sitting in those wallets after the burn. The
+      105,353.5 between them is almost entirely the later ladders&rsquo; starting balances, which were paid
+      out of the previous ladder&rsquo;s proceeds and are therefore already counted once inside the created
+      figure. Only 9.9 DERO of it ever came from outside. For any argument about what the exploit
+      added to the supply, the first number answers it; the second counts the same coins twice.
+    </p>
+  </div>
+
+  <div class="note">
+    <span class="label">Where the money left behind actually went</span>
+    <p>
+The 20 apparent breaks are bridged by <strong>36 ordinary transfers</strong>, found by
+      walking the blocks between the rungs, with every amount recovered from the transactions themselves.
+      The <strong>5,556.1</strong> total is measured. Its breakdown is not: 4,307.6 is change still
+      sitting in wallets, 1,248.4 sat in wallets that a doubled debit drove below zero, and fees account for
+      0.09922, being 121 atomic units on each of the 82 transfers. Those three come to 0.00484
+      more than the measured total, which is exactly four fees, and that gap is not resolved here. Which
+      individual links kept change and which drove a payer below zero needs per-wallet balance analysis that
+      nobody has run. Nothing was destroyed in the overdrawn case: DERO adds a balance change unconditionally,
+      with no underflow check and no burn, so an overdrawn account carries a negative balance more like a debt
+      than a loss. It is counted here as money that left the ladders and never landed anywhere useful. None of it reached the exchange deposit described below, which
+      was mined at block 7,471,517, roughly 11,400 blocks <em>before</em> ladder 3&rsquo;s first rung at
+      7,482,913. Money cannot move backwards in time.
+    </p>
+  </div>
+
+  <h2>Where it ended up</h2>
+  <hr class="rule">
+
+  <figure>
+    <div class="figure-scroll">
+    <svg viewBox="0 0 700 150" role="img" aria-label="Proportional bar of the 23,991,870.8 DERO that reached the four end wallets. About 20.8 percent is drawn for a five million DERO burn recorded on chain in the same era. The burn itself is verified; that these wallets paid it is not shown, and it is drawn here for scale only. A sliver, 5,547.3 DERO, is the change left behind at the six largest points; it has been followed and is not missing. The remainder is still in the end wallets." xmlns="http://www.w3.org/2000/svg">
+      <rect x="40" y="40" width="129.2" height="46" style="fill:var(--good);fill-opacity:.22;stroke:var(--good)"></rect>
+      <rect x="169.2" y="40" width="1.5" height="46" style="fill:var(--crit);fill-opacity:.30;stroke:var(--crit)"></rect>
+      <rect x="170.7" y="40" width="490.6" height="46" style="fill:var(--warn);fill-opacity:.14;stroke:var(--warn)"></rect>
+
+      <text x="46" y="32" style="fill:var(--good);font-family:var(--font-mono);font-size:12px">burned 20.8%</text>
+      <text x="46" y="70" style="fill:var(--ink);font-family:var(--font-mono);font-size:13px">5,000,000</text>
+      <text x="176.7" y="32" style="fill:var(--warn);font-family:var(--font-mono);font-size:12px">still outstanding 79.2%</text>
+      <text x="176.7" y="70" style="fill:var(--ink);font-family:var(--font-mono);font-size:13px">18,991,870.8</text>
+
+      <path d="M169.9,92 L169.9,112" style="fill:none;stroke:var(--crit)"></path>
+      <text x="169.9" y="126" text-anchor="middle" style="fill:var(--crit);font-family:var(--font-mono);font-size:11px">5,547.3 leaked off the ladders</text>
+      <text x="169.9" y="140" text-anchor="middle" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:10px">located in the bridge wallets</text>
+    </svg>
+    </div>
+    <figcaption>
+      Of the 23,991,870.8 DERO that reached the four end wallets, a burn of five million was recorded on chain in
+      the same era. The burn itself is real, the chain would have rejected the transaction unless the coins
+      genuinely left the sender; that these wallets paid it is not. It uses a ring of 16 and none of the operation&rsquo;s known addresses appears among its
+      ring members, so it is drawn here for scale only. The red sliver is the 5,547.3 left behind at the six largest points,
+      drawn to scale, which is why it is barely visible. Everything else is still out there.
+    </figcaption>
+  </figure>
+
+  <div class="note warn">
+    <span class="label">One inference, flagged as such</span>
+    <p>
+      The five million burn is real, the chain binds the burned amount to coins that actually left a funded
+      account and would have rejected the transaction otherwise. What is
+      <em>not</em> proven is that the coins burned came from these ladders. That transaction uses a ring of
+      16 and its sender is hidden, so nobody can tie it to these wallets from the chain alone. It is
+      strongly suggestive, because five million is larger than all the coins ever mined on DERO put
+      together, outside the premine, but it remains an inference and is treated as one here.
+    </p>
+  </div>
+
+  <table>
+    <caption>
+      The six links where more than 2 DERO stayed behind. &ldquo;Expected&rdquo; is twice the previous
+      rung, which is what the next one would be if everything moved on. All six have been located in the
+      bridge wallets, as has the 8.8 spread across the remaining links, though which link kept change
+      and which ran a payer negative is not resolved.
+    </caption>
+    <thead>
+      <tr><th>Ladder</th><th>Link</th><th class="num">Expected (DERO)</th><th class="num">Actual (DERO)</th><th class="num">Left behind</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>2</td><td class="mono">rung 10 &rarr; 11</td><td class="num">1,023,618.0</td><td class="num">1,023,611.0</td><td class="num">7.0</td></tr>
+      <tr><td>3</td><td class="mono">rung 1 &rarr; 2</td><td class="num">199,800.0</td><td class="num">199,600.0</td><td class="num">200.0</td></tr>
+      <tr><td>3</td><td class="mono">rung 2 &rarr; 3</td><td class="num">399,200.0</td><td class="num">399,100.0</td><td class="num">100.0</td></tr>
+      <tr><td>3</td><td class="mono">rung 3 &rarr; 4</td><td class="num">798,200.0</td><td class="num">794,000.0</td><td class="num">4,200.0</td></tr>
+      <tr><td>3</td><td class="mono">rung 4 &rarr; 5</td><td class="num">1,588,000.0</td><td class="num">1,586,999.8</td><td class="num">1,000.2</td></tr>
+      <tr><td>4</td><td class="mono">rung 6 &rarr; 7</td><td class="num">623.6</td><td class="num">583.5</td><td class="num">40.1</td></tr>
+    </tbody>
+    <tfoot>
+      <tr><td colspan="2">Across these six</td><td class="num">5,547.3</td><td class="num">plus 8.8</td><td>at the other links</td></tr>
+    </tfoot>
+  </table>
+
+  <h2>The four ladders</h2>
+  <hr class="rule">
+  <p>
+    They are not four separate operations. They are one chain: ladder 4 ran first from 9.9 DERO,
+    and each later ladder was seeded out of the one before it: 100,000 sent into ladder 3, which then started
+    from 99,900, then 1,000 sent into ladder 2, which started from 999.9, then 10,000 sent into ladder 1,
+    which started from 9,999.8. Every seed matches the previous ladder&rsquo;s payout less fees.
+    Ladder 1 made the most; ladder 4 ran the longest, and its end wallet later sent at least
+    <strong>408,774.564 DERO</strong> onward to a single address that behaves like an exchange or similar
+    service. Ladder 3 is the leaky one, losing value at every step.
+  </p>
+
+  <figure>
+    <div class="figure-scroll">
+    <svg viewBox="0 0 760 600" role="img" aria-label="Vertical flow. 9.9 DERO of outside money enters ladder 4, which runs 18 rungs and creates 2,389,484.8. Its end wallet sends 408,774.564 or more to an exchange-like service, and 100,000 across to seed ladder 3, which creates 3,079,599.8 over 5 rungs and sends 1,000 to ladder 2, which creates 8,187,897.4 over 13 rungs and sends 10,000 to ladder 1, which creates 10,229,535.3 over 10 rungs. Five million was later burned but which wallet paid it is not provable." xmlns="http://www.w3.org/2000/svg"><defs><marker id="fd" markerWidth="9" markerHeight="9" refX="4.5" refY="8" orient="auto"><path d="M0,0 L9,0 L4.5,9 z" style="fill:var(--ink-faint)"></path></marker><marker id="fx" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" style="fill:var(--good)"></path></marker></defs><text x="255" y="20" text-anchor="middle" style="fill:var(--good);font-family:var(--font-mono);font-size:12.5px">9.9 DERO of outside money, the only capital that came from anywhere else</text><path d="M255,28 L255,50" style="fill:none;stroke:var(--good)" marker-end="url(#fd)"></path><rect x="40" y="56" width="430" height="80" rx="4" style="fill:var(--surface);stroke:var(--accent)"></rect><text x="58" y="86" style="fill:var(--accent);font-family:var(--font-mono);font-size:13px">LADDER 4</text><text x="452" y="86" text-anchor="end" style="fill:var(--ink);font-family:var(--font-mono);font-size:13px">created 2,389,484.8</text><text x="58" y="112" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:11.5px">18 rungs &#183; 9.9 &#8594; 1,194,726.1</text><text x="452" y="112" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11.5px">8/17 wallet gaps &#183; 1 leak</text><rect x="40" y="192" width="430" height="80" rx="4" style="fill:var(--surface);stroke:var(--accent)"></rect><text x="58" y="222" style="fill:var(--accent);font-family:var(--font-mono);font-size:13px">LADDER 3</text><text x="452" y="222" text-anchor="end" style="fill:var(--ink);font-family:var(--font-mono);font-size:13px">created 3,079,599.8</text><text x="58" y="248" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:11.5px">5 rungs &#183; 99,900.0 &#8594; 1,586,999.8</text><text x="452" y="248" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11.5px">3/4 wallet gaps &#183; 4 leaks</text><rect x="40" y="312" width="430" height="80" rx="4" style="fill:var(--surface);stroke:var(--accent)"></rect><text x="58" y="342" style="fill:var(--accent);font-family:var(--font-mono);font-size:13px">LADDER 2</text><text x="452" y="342" text-anchor="end" style="fill:var(--ink);font-family:var(--font-mono);font-size:13px">created 8,187,897.4</text><text x="58" y="368" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:11.5px">13 rungs &#183; 999.9 &#8594; 4,094,443.0</text><text x="452" y="368" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11.5px">7/12 wallet gaps &#183; 1 leak</text><rect x="40" y="432" width="430" height="80" rx="4" style="fill:var(--surface);stroke:var(--accent)"></rect><text x="58" y="462" style="fill:var(--accent);font-family:var(--font-mono);font-size:13px">LADDER 1</text><text x="452" y="462" text-anchor="end" style="fill:var(--ink);font-family:var(--font-mono);font-size:13px">created 10,229,535.3</text><text x="58" y="488" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:11.5px">10 rungs &#183; 9,999.8 &#8594; 5,119,766.5</text><text x="452" y="488" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11.5px">2/9 wallet gaps &#183; no leaks</text><path d="M255,136 L255,186" style="fill:none;stroke:var(--ink-faint)" marker-end="url(#fd)"></path><text x="245" y="168" text-anchor="end" style="fill:var(--ink);font-family:var(--font-mono);font-size:11.5px">100,000 across</text><path d="M255,272 L255,306" style="fill:none;stroke:var(--ink-faint)" marker-end="url(#fd)"></path><text x="245" y="296" text-anchor="end" style="fill:var(--ink);font-family:var(--font-mono);font-size:11.5px">1,000 across</text><path d="M255,392 L255,426" style="fill:none;stroke:var(--ink-faint)" marker-end="url(#fd)"></path><text x="245" y="416" text-anchor="end" style="fill:var(--ink);font-family:var(--font-mono);font-size:11.5px">10,000 across</text><path d="M255,160 L534,160" style="fill:none;stroke:var(--good)" marker-end="url(#fx)"></path><rect x="538" y="140" width="208" height="40" rx="4" style="fill:var(--surface);stroke:var(--good)"></rect><text x="642" y="158" text-anchor="middle" style="fill:var(--good);font-family:var(--font-mono);font-size:11.5px">exchange or similar</text><text x="642" y="173" text-anchor="middle" style="fill:var(--ink);font-family:var(--font-mono);font-size:11.5px">&#8805; 408,774.564</text><path d="M255,512 L255,536" style="fill:none;stroke:var(--crit);stroke-dasharray:3 3" marker-end="url(#fd)"></path><rect x="40" y="540" width="430" height="42" rx="4" style="fill:var(--surface);stroke:var(--crit);stroke-dasharray:4 3"></rect><text x="58" y="558" style="fill:var(--crit);font-family:var(--font-mono);font-size:13px">5,000,000 burned</text><text x="452" y="558" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11.5px">dashed: which wallet paid it</text><text x="452" y="574" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11.5px">is not provable</text></svg>
+    </div>
+    <figcaption>
+      Read it top to bottom. Everything on this page grows from the 9.9 DERO at the top. Each
+      ladder&rsquo;s end wallet paid the next one&rsquo;s starting balance, so the same coins appear again
+      further down, which is why adding the four end balances together counts some of them twice. The green
+      branch is the one exit anyone has been able to measure. The burn is drawn dashed because the
+      transaction that paid it hides its sender.
+    </figcaption>
+  </figure>
+
+  <figure>
+    <div class="figure-scroll">
+    <svg viewBox="0 0 700 220" role="img" aria-label="Bar chart of value created per ladder. Ladder 1 created 10,229,535.3 DERO over 10 rungs with 2 wallet gaps. Ladder 2 created 8,187,897.4 over 13 rungs with 7 gaps. Ladder 3 created 3,079,599.8 over 5 rungs with 3 gaps. Ladder 4 created 2,389,484.8 over 18 rungs with 8 gaps." xmlns="http://www.w3.org/2000/svg">
+      <text x="86" y="47" text-anchor="end" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">ladder 1</text><rect x="96" y="30" width="330.0" height="24" rx="2" style="fill:var(--accent-wash);stroke:var(--accent)"></rect><text x="440" y="47" style="fill:var(--ink);font-family:var(--font-mono);font-size:12px">10,229,535.3</text><text x="690" y="47" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">10 rungs &middot; 2/9 gaps</text>
+      <text x="86" y="93" text-anchor="end" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">ladder 2</text><rect x="96" y="76" width="264.1" height="24" rx="2" style="fill:var(--accent-wash);stroke:var(--accent)"></rect><text x="440" y="93" style="fill:var(--ink);font-family:var(--font-mono);font-size:12px">8,187,897.4</text><text x="690" y="93" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">13 rungs &middot; 7/12 gaps</text>
+      <text x="86" y="139" text-anchor="end" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">ladder 3</text><rect x="96" y="122" width="99.3" height="24" rx="2" style="fill:var(--accent-wash);stroke:var(--accent)"></rect><text x="440" y="139" style="fill:var(--ink);font-family:var(--font-mono);font-size:12px">3,079,599.8</text><text x="690" y="139" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">5 rungs &middot; 3/4 gaps</text>
+      <text x="86" y="185" text-anchor="end" style="fill:var(--ink-soft);font-family:var(--font-mono);font-size:12px">ladder 4</text><rect x="96" y="168" width="77.1" height="24" rx="2" style="fill:var(--accent-wash);stroke:var(--accent)"></rect><text x="440" y="185" style="fill:var(--ink);font-family:var(--font-mono);font-size:12px">2,389,484.8</text><text x="690" y="185" text-anchor="end" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:11px">18 rungs &middot; 8/17 gaps</text>
+      <text x="96" y="216" style="fill:var(--ink-faint);font-family:var(--font-mono);font-size:10px">bars show value created from nothing (sum of that ladder&rsquo;s rungs)</text>
+    </svg>
+    </div>
+    <figcaption>
+      Rung count and value created are not the same thing. Ladder 4 has the most steps but made the least,
+      because it started from 9.9 DERO. Ladder 3 ran only five rungs on a seed of 99,900, so its
+      amounts were large from the first step, which is why its six-figure leaks dwarf the rest.
+    </figcaption>
+  </figure>
+
+  <div class="note">
+    <span class="label">How that 408,774.564 is known, and why &ldquo;service&rdquo; rather than a name</span>
+    <p>
+      The amount is not a guess, and the test is one anyone can run. In these older transactions the amount
+      and its blinding factor sit together in a single public commitment, so proposing an amount fixes the
+      key the attached payload was encrypted under. That makes a candidate testable without any wallet key:
+      subtract <code>amount &times; G</code> from the on-chain commitment to recover the blinder, take
+      <code>Keccak256</code> of its compressed form, derive the payload key from that and the ring member&rsquo;s
+      public key, and decrypt. The right amount yields a canonical, well-formed payload. Wrong ones yield
+      noise. In transaction <span class="mono">dd095ee722bf4126c50f281261b72933e1495ba9c2e47f35069e8e00d22dce55</span>
+      at block 7,471,517, 408,774.564 decrypts cleanly. Twenty thousand nearby wrong values do not, and
+      neither does the same figure one atomic unit higher or lower. Every amount in the transaction table below was
+      recovered the same way. What it decrypts to is a routing tag, the sort of per-customer deposit
+      identifier a service issues so an incoming payment lands in the right account. That, together with a
+      receiving address registered years before any wallet in this operation and the same identifier repeated
+      across both transfers, is the most that can honestly be said. &ldquo;Exchange or similar service&rdquo;
+      describes a shape. It is not an identification. Nothing on chain
+      attaches a brand name to it, so nothing here names one, and the tag itself is not published because
+      it identifies an account.
+    </p>
+  </div>
+
+  <h2>Every published transaction</h2>
+  <hr class="rule">
+  <p>
+    All 53 of them, exactly as published, sortable and searchable. Transaction IDs and addresses are
+    truncated for width, but the full value is really on the page: select a cell and copy it, or hover to
+    expand. The filter matches full IDs, addresses and raw amounts. Ladder numbering follows the
+    maintainer&rsquo;s published list rather than the order the ladders ran, so ladder 4 is the earliest. The seven rows marked <strong>dust</strong> are the odd
+    ones out: transfers totalling 1.84738 DERO, all between one fixed pair of addresses, which the
+    maintainer counted as contributing nothing. They are listed because they appear in the
+    affected-transaction set, not because they moved value. <span class="tag gap">gap</span> means the wallet that received the previous rung is
+    not the wallet that sent this one, so an ordinary transfer moved the coins in between and is not in
+    this list. <span class="tag leak">leak</span> marks the six rungs after which more than 2 DERO stayed
+    behind; smaller amounts stay behind at every other link too, and fees are only 0.00121 DERO per transfer.
+  </p>
+
+  <div class="controls">
+    <label class="count" for="q">Filter</label>
+    <input id="q" type="search" placeholder="address, txid, amount&hellip;" aria-label="Filter transactions">
+    <select id="f" aria-label="Filter by ladder">
+      <option value="">all ladders</option>
+      <option value="L1">ladder 1</option><option value="L2">ladder 2</option>
+      <option value="L3">ladder 3</option><option value="L4">ladder 4</option>
+      <option value="dust">dust batch</option>
+    </select>
+    <span class="count" id="n"></span>
+  </div>
+
+  <div class="tbl-wrap">
+  <table class="data" id="t">
+    <thead>
+      <tr><th data-k="lad">Ladder</th><th data-k="rung" class="num">Rung</th><th data-k="h" class="num">Height</th><th data-k="tx">Transaction</th>
+      <th data-k="from">From</th><th data-k="to">To</th><th data-k="amt" class="num">Amount (DERO)</th><th>Flags</th></tr>
+    </thead>
+    <tbody id="tb">
+<tr data-lad="1" data-amt="9999.8"><td class="mono">L1</td><td class="num">1</td><td class="num mono">7,497,519</td><td class="mono"><span class="txid">71588148dade214248f46fb912ac933fc60f2a0ba7d69b3b7317067c366e8312</span></td><td class="mono"><span class="addr">dero1qyrx6n2qrwpnlv50ntqaq3jtcp0nf9a7hv7j6m6drwjk3rzfrtaecqqtp5wt4</span></td><td class="mono"><span class="addr">dero1qy3m9r8r3qxxjnysfuwd06msps3evqmwsz32280g499pksuef5gxgqq2jdc5j</span></td><td class="num">9,999.80000</td><td></td></tr>
+<tr data-lad="1" data-amt="19999.4"><td class="mono">L1</td><td class="num">2</td><td class="num mono">7,497,568</td><td class="mono"><span class="txid">337677e2cad7c2633099ab65b5f5ce5a099b9c76a5cc7846c587d189f55ad95d</span></td><td class="mono"><span class="addr">dero1qykd0y522ged5t95rr8tjxzwyxapyf9amspgwtgxw9vgl6m98g3m5qql57dfz</span></td><td class="mono"><span class="addr">dero1qyqj67r6a0px07m7nkwwpd2sehl7psv3p2t7u2mygjyvdl5dfkvczqq5939h7</span></td><td class="num">19,999.40000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="1" data-amt="39998.5"><td class="mono">L1</td><td class="num">3</td><td class="num mono">7,497,675</td><td class="mono"><span class="txid">411012a7711794d2c641acbd4e1cd14dfd5e20d6085ab4748af28e7d6a3a5b99</span></td><td class="mono"><span class="addr">dero1qyn7u9vngvaynwptjrgju8lz67wcntnepmgz3h8w8j3nw92um0mw2qq22kltg</span></td><td class="mono"><span class="addr">dero1qy4q93j0f2scclyp0d8ydw0q0582623lntgaqwtlv5yzqm946fqsqqqpys0wv</span></td><td class="num">39,998.50000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="1" data-amt="79996.9"><td class="mono">L1</td><td class="num">4</td><td class="num mono">7,497,706</td><td class="mono"><span class="txid">ab6cca96748292825e8188550f3fadcd43734d4a1e73514c03702adb456f8926</span></td><td class="mono"><span class="addr">dero1qy4q93j0f2scclyp0d8ydw0q0582623lntgaqwtlv5yzqm946fqsqqqpys0wv</span></td><td class="mono"><span class="addr">dero1qyxhaxw2quqntgks8e9t8ccwmxp2cyzegghtcd9l43948z78hq3hjqqczefqe</span></td><td class="num">79,996.90000</td><td></td></tr>
+<tr data-lad="1" data-amt="159992.8"><td class="mono">L1</td><td class="num">5</td><td class="num mono">7,497,722</td><td class="mono"><span class="txid">a86a316b2d9f33e5e8552925e7cd504999033b38c4e2aba6aa3a25f7a2eba003</span></td><td class="mono"><span class="addr">dero1qyxhaxw2quqntgks8e9t8ccwmxp2cyzegghtcd9l43948z78hq3hjqqczefqe</span></td><td class="mono"><span class="addr">dero1qywn57qelwkhrmkc7ln5t0pguc643tx49454z259sqfyq7daemr7qqgrp8s9m</span></td><td class="num">159,992.80000</td><td></td></tr>
+<tr data-lad="1" data-amt="319985.5"><td class="mono">L1</td><td class="num">6</td><td class="num mono">7,497,836</td><td class="mono"><span class="txid">4d56a1a150063b6bd810a33fc669df8e2698475f0b3c17d96cab738b25ba8393</span></td><td class="mono"><span class="addr">dero1qywn57qelwkhrmkc7ln5t0pguc643tx49454z259sqfyq7daemr7qqgrp8s9m</span></td><td class="mono"><span class="addr">dero1qy5fyev9r2z2lm0f7s6t9rpdjxwrt5av65h28nq765x0pe2lzdnecqqly6clq</span></td><td class="num">319,985.50000</td><td></td></tr>
+<tr data-lad="1" data-amt="639970.9"><td class="mono">L1</td><td class="num">7</td><td class="num mono">7,497,847</td><td class="mono"><span class="txid">a9b0c1d112958534b5f3eec186832cce85986278afe1729937469fff18c1684a</span></td><td class="mono"><span class="addr">dero1qy5fyev9r2z2lm0f7s6t9rpdjxwrt5av65h28nq765x0pe2lzdnecqqly6clq</span></td><td class="mono"><span class="addr">dero1qyqpshddlse0367z70fsfvufy4t0kyz044t56qxt46y4uvc6nkzasqgyzvzrf</span></td><td class="num">639,970.90000</td><td></td></tr>
+<tr data-lad="1" data-amt="1279941.7"><td class="mono">L1</td><td class="num">8</td><td class="num mono">7,497,892</td><td class="mono"><span class="txid">94f8ced9b3cd40993173c53ea0bffc99d1db3a8d7a8cfea2cbed7a7fba524684</span></td><td class="mono"><span class="addr">dero1qyqpshddlse0367z70fsfvufy4t0kyz044t56qxt46y4uvc6nkzasqgyzvzrf</span></td><td class="mono"><span class="addr">dero1qyg2zxqndrhppj0ateg9nq4sx6w0xvcvpuqzk0vf5nwn9v8y40re7qg0ztag7</span></td><td class="num">1,279,941.70000</td><td></td></tr>
+<tr data-lad="1" data-amt="2559883.3"><td class="mono">L1</td><td class="num">9</td><td class="num mono">7,497,921</td><td class="mono"><span class="txid">2aabb168b2b7210bc2d1620ddbbd038de4ae45847cc77a27be4389aea388a5e9</span></td><td class="mono"><span class="addr">dero1qyg2zxqndrhppj0ateg9nq4sx6w0xvcvpuqzk0vf5nwn9v8y40re7qg0ztag7</span></td><td class="mono"><span class="addr">dero1qyrkgj5d9wpfup6wu4g52uq7a7cvnadt9ln0684quxwx7y57gqaxqqg4arv3j</span></td><td class="num">2,559,883.30000</td><td></td></tr>
+<tr data-lad="1" data-amt="5119766.5"><td class="mono">L1</td><td class="num">10</td><td class="num mono">7,497,942</td><td class="mono"><span class="txid">ab1da121afe17852ee24f19b836e602d3389b569048838223acd754247d7ff91</span></td><td class="mono"><span class="addr">dero1qyrkgj5d9wpfup6wu4g52uq7a7cvnadt9ln0684quxwx7y57gqaxqqg4arv3j</span></td><td class="mono"><span class="addr">dero1qyqamkvss4hmgfhfh9n43enr8zh4qn7yezwcsswdpqddqvk4zngpyqqmemmy8</span></td><td class="num">5,119,766.50000</td><td></td></tr>
+<tr data-lad="2" data-amt="999.9"><td class="mono">L2</td><td class="num">1</td><td class="num mono">7,493,238</td><td class="mono"><span class="txid">bba77f85c72d2b896e1fca1e39327a3a57eca4d722326a524db2042df04766ee</span></td><td class="mono"><span class="addr">dero1qyzpws3jmrp5gvtza5yzafjm2tmgevrrsk7ucj7aq0xwkg3pjhr35qqppaz5q</span></td><td class="mono"><span class="addr">dero1qysrq5a5lu9t89m7heprufjxqe0u79djrl3hv7gjp6r9c0nz2nzksqqzfkkgv</span></td><td class="num">999.90000</td><td></td></tr>
+<tr data-lad="2" data-amt="1999.7"><td class="mono">L2</td><td class="num">2</td><td class="num mono">7,493,246</td><td class="mono"><span class="txid">b43be6528061e4eb1ca6e7bcfcd419e42839bbeec5cdcbf7e664be2fd501dad2</span></td><td class="mono"><span class="addr">dero1qysrq5a5lu9t89m7heprufjxqe0u79djrl3hv7gjp6r9c0nz2nzksqqzfkkgv</span></td><td class="mono"><span class="addr">dero1qyvjp3dfyvgazhym5pcnw3pstjj49tzptyh7exq4dk2h5jdza9fugqql6ydr6</span></td><td class="num">1,999.70000</td><td></td></tr>
+<tr data-lad="2" data-amt="3998.7"><td class="mono">L2</td><td class="num">3</td><td class="num mono">7,493,549</td><td class="mono"><span class="txid">fd79549ad416cbec243d9ce54014b26f888f1cfd0cfe1aed5dde978a11dcaeab</span></td><td class="mono"><span class="addr">dero1qy8sc3s550d7xmpmchatem960528uax94t0au8p08js970eueeukvqg2f6uqv</span></td><td class="mono"><span class="addr">dero1qyt8ln3tg3s2lzwlmceukj69w0s8fzrn6lkc5597wzaufa7j3j5x6qqx2jkdm</span></td><td class="num">3,998.70000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="2" data-amt="7997.2"><td class="mono">L2</td><td class="num">4</td><td class="num mono">7,493,588</td><td class="mono"><span class="txid">9eba39af652ee2a0d4835d964cffcd0be4ac6f103138e87c80953902e4ce0026</span></td><td class="mono"><span class="addr">dero1qyxtxcgw52ggyukhtv38nne479we29dcrgyqzv8calaamxsfxav8vqq8jr56y</span></td><td class="mono"><span class="addr">dero1qy4wa32e6wuh2pcgnn2yck6w622slr8xkk0tsp7a3u8ghwts6ph3gqguf6hyg</span></td><td class="num">7,997.20000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="2" data-amt="15994.3"><td class="mono">L2</td><td class="num">5</td><td class="num mono">7,493,600</td><td class="mono"><span class="txid">1eb43df8ab1abd8934c74cc0d08b5d9fef02604ca6500a7cf947d263b882cafe</span></td><td class="mono"><span class="addr">dero1qy4wa32e6wuh2pcgnn2yck6w622slr8xkk0tsp7a3u8ghwts6ph3gqguf6hyg</span></td><td class="mono"><span class="addr">dero1qysrzrzenf0v2k8lqer2hpryx2avrfv5yzudtlqmsrmk3eglx6pc6qqsdnr0u</span></td><td class="num">15,994.30000</td><td></td></tr>
+<tr data-lad="2" data-amt="31988.4"><td class="mono">L2</td><td class="num">6</td><td class="num mono">7,493,663</td><td class="mono"><span class="txid">74b79178426990bcd071cd26829900027e78b6d36e77b57e050a0bba4398ed1f</span></td><td class="mono"><span class="addr">dero1qyjxkze8ymlvan84q2gywy7mu74t04dlgngj4ahqhkzuf68hkd87gqg022lmw</span></td><td class="mono"><span class="addr">dero1qytve309g7st0tvm92t86h6rt96fcyazst9wpp3n4ckv4efwsjw5kqq7vfrwm</span></td><td class="num">31,988.40000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="2" data-amt="63976.6"><td class="mono">L2</td><td class="num">7</td><td class="num mono">7,493,682</td><td class="mono"><span class="txid">ba3834ef15b7d714836e9944c46c8795066b328ff678c5cc44c7cdf0a3fa5ebd</span></td><td class="mono"><span class="addr">dero1qytve309g7st0tvm92t86h6rt96fcyazst9wpp3n4ckv4efwsjw5kqq7vfrwm</span></td><td class="mono"><span class="addr">dero1qyzj8p78ws0vntuqytz8qs383ancz4spsuy5kyju4e6k0jrf338mjqgru7g3h</span></td><td class="num">63,976.60000</td><td></td></tr>
+<tr data-lad="2" data-amt="127953.0"><td class="mono">L2</td><td class="num">8</td><td class="num mono">7,493,752</td><td class="mono"><span class="txid">ed09fcce52484862a01fcb0e03d6799ba16d7304e4b0af1d60cde4ce399c1207</span></td><td class="mono"><span class="addr">dero1qyr6957cavskxk9ny5mh20swv3c40l2yctvdp04tnu0exh0knc3vwqgsel4px</span></td><td class="mono"><span class="addr">dero1qyymsgq2u3l4krz2ju0psjzjkq7eg4th7fd3qu0sh87k633fpd64kqq8vy93d</span></td><td class="num">127,953.00000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="2" data-amt="255905.0"><td class="mono">L2</td><td class="num">9</td><td class="num mono">7,493,772</td><td class="mono"><span class="txid">17cd5710eee2cb27cdb1a68dfe63e955260ea8dc3e59e234a20bed14cb409970</span></td><td class="mono"><span class="addr">dero1qyymsgq2u3l4krz2ju0psjzjkq7eg4th7fd3qu0sh87k633fpd64kqq8vy93d</span></td><td class="mono"><span class="addr">dero1qyk68vpx6x34wnfz4aj8zrftclyskvn8a8e8lugk4hx2medcrx5wyqgnjlhks</span></td><td class="num">255,905.00000</td><td></td></tr>
+<tr data-lad="2" data-amt="511809.0"><td class="mono">L2</td><td class="num">10</td><td class="num mono">7,493,786</td><td class="mono"><span class="txid">e5676c4e2cc98429c890a30bdc1db231935dd52c91d17aa077a24a87a2dc35f9</span></td><td class="mono"><span class="addr">dero1qyk68vpx6x34wnfz4aj8zrftclyskvn8a8e8lugk4hx2medcrx5wyqgnjlhks</span></td><td class="mono"><span class="addr">dero1qydx8ln40ughw0deeftt5n28txkcnhu6ptnnmse3gpx9rv62jk5muqg4yfpen</span></td><td class="num">511,809.00000</td><td><span class="tag leak" title="7.0 DERO left the ladder after this rung">leak</span></td></tr>
+<tr data-lad="2" data-amt="1023611.0"><td class="mono">L2</td><td class="num">11</td><td class="num mono">7,493,898</td><td class="mono"><span class="txid">211082955f1fda468ba0cd604e14dc5d84f4eb096f3c349f4ad05757c979dce6</span></td><td class="mono"><span class="addr">dero1qyrwxfhjjg676vjhna4fuvtl63k3uhfp87x7fgymn0380nv2w874zqqm2n5g0</span></td><td class="mono"><span class="addr">dero1qys2ffuuw3ap82tqyfz4dh29fvs4fymqrtmvuyxdv7ld39j7ceat6qg8y38t5</span></td><td class="num">1,023,611.00000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="2" data-amt="2047221.6"><td class="mono">L2</td><td class="num">12</td><td class="num mono">7,494,011</td><td class="mono"><span class="txid">85d52fe6f310f4af1d11611ef3577d477b76af3c0d050e2f4493e16822f68a18</span></td><td class="mono"><span class="addr">dero1qyhc55q74mlk9u4q583n4gttut4vslvpyerhkpumpcsunag3yu74kqquutpjs</span></td><td class="mono"><span class="addr">dero1qy52l4ja899d3x37e4hewszegkqm339kgm6uz4q4tjckusxujq0usqqjl2mk7</span></td><td class="num">2,047,221.60000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="2" data-amt="4094443.0"><td class="mono">L2</td><td class="num">13</td><td class="num mono">7,494,167</td><td class="mono"><span class="txid">5a14d8516288648133b8cea98afa1b9a2f783a3ea345b191e57d388b64ca5ecf</span></td><td class="mono"><span class="addr">dero1qy3tvuez8szgpvx6vf6hxslvn23lnx70m4luh6e7kw76qu74ddt47qgcpfnzy</span></td><td class="mono"><span class="addr">dero1qy0hm0fm5yn7uv908lt4099p5arqgvwp6jpac0gkacak8zlhacpe5qgjdhxjk</span></td><td class="num">4,094,443.00000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="3" data-amt="99900.0"><td class="mono">L3</td><td class="num">1</td><td class="num mono">7,482,913</td><td class="mono"><span class="txid">e42eb301e2f0863de346ada3a531cdf70ca224a90dae2e861a21407a0c76bfc5</span></td><td class="mono"><span class="addr">dero1qydsg3gvr9m8f9pmq78akq80dej53gwrwhgtt6p8ml83wzhzelyacqq8wne0f</span></td><td class="mono"><span class="addr">dero1qy00ac9j0alk5nl4m4xlhhq63ryelwhvdlha3jdhja9e6rt57g5pqqq23xje4</span></td><td class="num">99,900.00000</td><td><span class="tag leak" title="200.0 DERO left the ladder after this rung">leak</span></td></tr>
+<tr data-lad="3" data-amt="199600.0"><td class="mono">L3</td><td class="num">2</td><td class="num mono">7,482,959</td><td class="mono"><span class="txid">9becfdff8e750fcd741f240ae701ca134fd54b1c3d1db9dbf9f0254f5a794046</span></td><td class="mono"><span class="addr">dero1qyxg09zf32xtxcntx7uzg3l5mwdq0hsv8l2lqrjnxp99skreqf9hyqqymapus</span></td><td class="mono"><span class="addr">dero1qyquyjw9d6l0tj88dt2vqhvf85lyecenn8zu5vy8hl92z0j4ddev6qgu8dewq</span></td><td class="num">199,600.00000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span><span class="tag leak" title="100.0 DERO left the ladder after this rung">leak</span></td></tr>
+<tr data-lad="3" data-amt="399100.0"><td class="mono">L3</td><td class="num">3</td><td class="num mono">7,482,968</td><td class="mono"><span class="txid">6aa20567ff23705aa91a4c607e8387d147b309f8eeb9f8198149c21c439c3692</span></td><td class="mono"><span class="addr">dero1qyquyjw9d6l0tj88dt2vqhvf85lyecenn8zu5vy8hl92z0j4ddev6qgu8dewq</span></td><td class="mono"><span class="addr">dero1qyhyuau4n4wydu2zp0km7uvd4crca3ynruzsve8pcn3t03ysgyqnsqqs93yxs</span></td><td class="num">399,100.00000</td><td><span class="tag leak" title="4,200.0 DERO left the ladder after this rung">leak</span></td></tr>
+<tr data-lad="3" data-amt="794000.0"><td class="mono">L3</td><td class="num">4</td><td class="num mono">7,483,214</td><td class="mono"><span class="txid">3ccf648db6d26295d68ec1c88cdc736a10caa35ad83b856cb9bb304f893c5043</span></td><td class="mono"><span class="addr">dero1qypt60tcvyrut70axzeq0pn6554jx7a8p5yw82kggvru6dpqqylz5qq0enwhv</span></td><td class="mono"><span class="addr">dero1qykhmp0pdc6jxmfjwql5jfv7h77utkypgdaukymsn6zk2x23vgnkkqqw3wg9m</span></td><td class="num">794,000.00000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span><span class="tag leak" title="1,000.2 DERO left the ladder after this rung">leak</span></td></tr>
+<tr data-lad="3" data-amt="1586999.8"><td class="mono">L3</td><td class="num">5</td><td class="num mono">7,483,355</td><td class="mono"><span class="txid">d856184d636c3ef8545979c902df15d6a1bf41b4a4b81d81762f519a6acfb689</span></td><td class="mono"><span class="addr">dero1qyjrjpvp78a0zkatcvznerq7leauvj0qsqk9quhwjr35kr4dzplg2qqpnv3pj</span></td><td class="mono"><span class="addr">dero1qy922ujaqug9ux8kdrxtgun657meedjkcqzmd6xu007z4gwr62lvxqgcnegz3</span></td><td class="num">1,586,999.80000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="4" data-amt="9.9"><td class="mono">L4</td><td class="num">1</td><td class="num mono">7,470,282</td><td class="mono"><span class="txid">9fba85d0ed98249e9b36ffbbaf15f6ae9bf9be061f3200b2f572c3e2f34b39ea</span></td><td class="mono"><span class="addr">dero1qy96d5l98rgx8j5jmld3atzmj5mklmlv9y88v4qdhqhclfad8xeycqqt5yzx7</span></td><td class="mono"><span class="addr">dero1qyx3h926nxh49sxtqr3lv4wef58a6293x5e7l5nrr9u809w5jnfm7qqu4xw2m</span></td><td class="num">9.90000</td><td></td></tr>
+<tr data-lad="4" data-amt="19.6"><td class="mono">L4</td><td class="num">2</td><td class="num mono">7,470,357</td><td class="mono"><span class="txid">ea445f18926af580fe8bf95466f3f7b9eea3eea0295a791323ee1d0ab4eddb0c</span></td><td class="mono"><span class="addr">dero1qy0u9ne69g9u2806p75kuaywdypxx8v49r8zxen8en3w35y6ululqqq9ga9mm</span></td><td class="mono"><span class="addr">dero1qyw0wfqkmsufarcc7cmsl8yl8tfwx6tphlcqkluufzzmf6em29gkkqqzsnjen</span></td><td class="num">19.60000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="4" data-amt="39.1"><td class="mono">L4</td><td class="num">3</td><td class="num mono">7,470,386</td><td class="mono"><span class="txid">0a0671cf132cc2c353df8d28631581c762acefac200123c84dd039c34e7cd336</span></td><td class="mono"><span class="addr">dero1qyw0wfqkmsufarcc7cmsl8yl8tfwx6tphlcqkluufzzmf6em29gkkqqzsnjen</span></td><td class="mono"><span class="addr">dero1qygp3g9m02l5a0relqe2mvz9wfe7t8wfcql4yj44dlx9vzpq8phkjqqh0ac7p</span></td><td class="num">39.10000</td><td></td></tr>
+<tr data-lad="4" data-amt="78.1"><td class="mono">L4</td><td class="num">4</td><td class="num mono">7,470,403</td><td class="mono"><span class="txid">8692d178675b0ab019f765ab8b8f5b739c0668f36151931223c4e3b63883f89a</span></td><td class="mono"><span class="addr">dero1qygp3g9m02l5a0relqe2mvz9wfe7t8wfcql4yj44dlx9vzpq8phkjqqh0ac7p</span></td><td class="mono"><span class="addr">dero1qyhp8a55dhjsra78dd5nl95h5k0cd8haeqggvgm7jt3sump7w9raxqgxvflue</span></td><td class="num">78.10000</td><td></td></tr>
+<tr data-lad="4" data-amt="156.0"><td class="mono">L4</td><td class="num">5</td><td class="num mono">7,470,452</td><td class="mono"><span class="txid">1877ddc33990d521dbd1702f8872441c642641cbb528042432da8d22b722fdbe</span></td><td class="mono"><span class="addr">dero1qyx5q8cdnfeydagtanedddyvvl20alzxeze0taqrfjxjtf6ks08rzqgmv599k</span></td><td class="mono"><span class="addr">dero1qy3ppw00sny65crntfvvehxg96pptu9w02lnhltyfhp2jawnlnxfyqqju5jsk</span></td><td class="num">156.00000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="4" data-amt="311.8"><td class="mono">L4</td><td class="num">6</td><td class="num mono">7,470,477</td><td class="mono"><span class="txid">92dce2c52528732ef76ba717f582b784a50bca61bc839426838cc641d28f545a</span></td><td class="mono"><span class="addr">dero1qynelpfvz49u5sc2z6dqug9n632sdw7rwrvgttwgt8nhg4qj69fqsqg6z7dg6</span></td><td class="mono"><span class="addr">dero1qykpxmdgpmxlvqjugf4nqx03hmcfvg3qf4sqx46lnp955akjku9x6qg0q0fvm</span></td><td class="num">311.80000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span><span class="tag leak" title="40.1 DERO left the ladder after this rung">leak</span></td></tr>
+<tr data-lad="4" data-amt="583.5"><td class="mono">L4</td><td class="num">7</td><td class="num mono">7,470,527</td><td class="mono"><span class="txid">62fa2cc6f10da7275d54f0448bd7028a1d1d7a92a99e204c3f4e2c08571032f7</span></td><td class="mono"><span class="addr">dero1qyfta2mh4hxfcdy38k6r8tyhgd7fnsglcplw7892qj7ufuzypux26qqp8fcqc</span></td><td class="mono"><span class="addr">dero1qydg0jm7f84hy2jjsy66zuc9aqpste36d3xga5he4vjp6867mxwpvqgds786z</span></td><td class="num">583.50000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="4" data-amt="1166.9"><td class="mono">L4</td><td class="num">8</td><td class="num mono">7,470,582</td><td class="mono"><span class="txid">556d78cfc579c2897be7d875e08a702860b867e63650ad2d07c393e50e1e484c</span></td><td class="mono"><span class="addr">dero1qydg0jm7f84hy2jjsy66zuc9aqpste36d3xga5he4vjp6867mxwpvqgds786z</span></td><td class="mono"><span class="addr">dero1qy46vz036xl3gxm59sgswx9upjffh6eg4kd0t5k4l6ccyjt3gkte7qqwxv6ru</span></td><td class="num">1,166.90000</td><td></td></tr>
+<tr data-lad="4" data-amt="2333.6"><td class="mono">L4</td><td class="num">9</td><td class="num mono">7,470,648</td><td class="mono"><span class="txid">00c6c9a78c4b40a03dc08e3637ee4e34103b39cfe2c6efaa803829509f0506d6</span></td><td class="mono"><span class="addr">dero1qyh3fjc0fnpu62uca90yxxunjzmhf8wqzfes5gxwg98jwmu5nz02xqqunq8tz</span></td><td class="mono"><span class="addr">dero1qytt7kmrmtzclgm5pcc0pl3jjy8uretqrxwmqxux3ag7vj8h7dgd7qqyvfd96</span></td><td class="num">2,333.60000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="4" data-amt="4667.1"><td class="mono">L4</td><td class="num">10</td><td class="num mono">7,470,706</td><td class="mono"><span class="txid">a70950ff17747e3b347d30b3db5631a5f97cd967a937eac2dcc11763c7685490</span></td><td class="mono"><span class="addr">dero1qytt7kmrmtzclgm5pcc0pl3jjy8uretqrxwmqxux3ag7vj8h7dgd7qqyvfd96</span></td><td class="mono"><span class="addr">dero1qyguq086adef42fd9wa3p0vzx47h8l9kev0w07amdpxr0hr5k6cfxqqgm3te5</span></td><td class="num">4,667.10000</td><td></td></tr>
+<tr data-lad="4" data-amt="9334.0"><td class="mono">L4</td><td class="num">11</td><td class="num mono">7,470,802</td><td class="mono"><span class="txid">60e4547d48b624555081cb8f7c97f8583234c3a112bb586c868ad5ff00eddaa4</span></td><td class="mono"><span class="addr">dero1qy2es62latatj4cehlt5zud6u74zyxtt8f929yke4y3ksgywvs2lzqg4asw2e</span></td><td class="mono"><span class="addr">dero1qyh0lga2la45cqtjsaveznnu9x4kr8ua0nq4svemqvwl8ruulx906qqdwfzzc</span></td><td class="num">9,334.00000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="4" data-amt="18667.7"><td class="mono">L4</td><td class="num">12</td><td class="num mono">7,470,879</td><td class="mono"><span class="txid">2f39de57b82f02787fc15537a29da2e4cdd8c350d2d2bc7f96b0d49ac57fcbaa</span></td><td class="mono"><span class="addr">dero1qy8rq807hq2cvuxfanwucuh8luhv0rnqwj77fj20vc6tngfmhclmxqqdk6zza</span></td><td class="mono"><span class="addr">dero1qy8tw239u0ycma6trwxut0jw7atz05efcxthuj9ljjn9wn32xsrdcqqv9dzq5</span></td><td class="num">18,667.70000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="4" data-amt="37335.3"><td class="mono">L4</td><td class="num">13</td><td class="num mono">7,470,896</td><td class="mono"><span class="txid">1e8c9c7764ea63e39a9b5fa59013578bf3a7cdf00edfa059cf5f1da6dc08b0d9</span></td><td class="mono"><span class="addr">dero1qy8tw239u0ycma6trwxut0jw7atz05efcxthuj9ljjn9wn32xsrdcqqv9dzq5</span></td><td class="mono"><span class="addr">dero1qyxel8wumehsmtfx9jy8v79kqday8m6kp5da5vcrmawpeuccelrkgqqaajfad</span></td><td class="num">37,335.30000</td><td></td></tr>
+<tr data-lad="4" data-amt="74670.5"><td class="mono">L4</td><td class="num">14</td><td class="num mono">7,470,910</td><td class="mono"><span class="txid">6e59f6b56453219ab9722a47870c4b2d76b29ddda068c069dcf59ba14e3e98aa</span></td><td class="mono"><span class="addr">dero1qyxel8wumehsmtfx9jy8v79kqday8m6kp5da5vcrmawpeuccelrkgqqaajfad</span></td><td class="mono"><span class="addr">dero1qy3vsegsx75gsetjyaydcdeq2fqfnjtjvqmy6m9lfm086fez78j4uqgfvsa32</span></td><td class="num">74,670.50000</td><td></td></tr>
+<tr data-lad="4" data-amt="149340.9"><td class="mono">L4</td><td class="num">15</td><td class="num mono">7,470,924</td><td class="mono"><span class="txid">6034f404619a7fa7bad529eb6758a6ba30184b100a5f8a8f921c99bebe309514</span></td><td class="mono"><span class="addr">dero1qy3vsegsx75gsetjyaydcdeq2fqfnjtjvqmy6m9lfm086fez78j4uqgfvsa32</span></td><td class="mono"><span class="addr">dero1qyxdrkxlztx6ymf6uwlu0qupx8fwffn47wnvsd4eqjxf3atkalf8sqqstvweu</span></td><td class="num">149,340.90000</td><td></td></tr>
+<tr data-lad="4" data-amt="298681.6"><td class="mono">L4</td><td class="num">16</td><td class="num mono">7,470,983</td><td class="mono"><span class="txid">9b75eb3bc2c2f10cb84977e4648e5a9f4bebcfb73075dd27a1fa1a14d0f6dfb0</span></td><td class="mono"><span class="addr">dero1qyjtk2fjm0527twxt29696jax7l30mxpd3fenx673ytzs9vty947xqgh8x3hr</span></td><td class="mono"><span class="addr">dero1qy07333r6gt0yjv9z6qrs39v428d7ed3c66yzhn4kyf3suf7dw5ssqqt47xmc</span></td><td class="num">298,681.60000</td><td><span class="tag gap" title="wallet gap before this rung">gap</span></td></tr>
+<tr data-lad="4" data-amt="597363.1"><td class="mono">L4</td><td class="num">17</td><td class="num mono">7,471,011</td><td class="mono"><span class="txid">b6cf0ef15e9af69d7b2f040ba2e0a75f41a414201069187fdec994584298e8f7</span></td><td class="mono"><span class="addr">dero1qy07333r6gt0yjv9z6qrs39v428d7ed3c66yzhn4kyf3suf7dw5ssqqt47xmc</span></td><td class="mono"><span class="addr">dero1qyhqfr9rrc4qzccdewk8mp066ct5ah74j79jclyf04c47dnph2kezqqlfmex7</span></td><td class="num">597,363.10000</td><td></td></tr>
+<tr data-lad="4" data-amt="1194726.1"><td class="mono">L4</td><td class="num">18</td><td class="num mono">7,471,053</td><td class="mono"><span class="txid">2e2b49f284f9d206fdb6dcf4a9ac9259426c61036bdf52036f1baf24b21269ac</span></td><td class="mono"><span class="addr">dero1qyhqfr9rrc4qzccdewk8mp066ct5ah74j79jclyf04c47dnph2kezqqlfmex7</span></td><td class="mono"><span class="addr">dero1qy0fcu8hf3mvuwg8tudqr7g6k6rnmc9a48wa9l25xdvt924zhqr6qqgzgew8k</span></td><td class="num">1,194,726.10000</td><td></td></tr>
+<tr data-lad="9" data-amt="0.31915"><td class="mono">dust</td><td class="num">1</td><td class="num mono">7,467,544</td><td class="mono"><span class="txid">3659ae2be646c4384bcc4adc94bdf9cfc23b366faa128a88f9ea5522e3d08d61</span></td><td class="mono"><span class="addr">dero1qyyawp87a3ckr9f2j5hnqmxevq3czrr83prc58ylc5889qdt0zf6cqgsr9jmq</span></td><td class="mono"><span class="addr">dero1qyt33uul6c4sx5krvszsdq0492lhk70234uuy4tc8s6h48e9sgup6qgmm0jnl</span></td><td class="num">0.31915</td><td></td></tr>
+<tr data-lad="9" data-amt="0.52310"><td class="mono">dust</td><td class="num">2</td><td class="num mono">7,467,569</td><td class="mono"><span class="txid">404180f833143669d3b347f4d8ceb1067b7a1ed057efcad7abcd7ad539745138</span></td><td class="mono"><span class="addr">dero1qyyawp87a3ckr9f2j5hnqmxevq3czrr83prc58ylc5889qdt0zf6cqgsr9jmq</span></td><td class="mono"><span class="addr">dero1qyt33uul6c4sx5krvszsdq0492lhk70234uuy4tc8s6h48e9sgup6qgmm0jnl</span></td><td class="num">0.52310</td><td></td></tr>
+<tr data-lad="9" data-amt="0.17784"><td class="mono">dust</td><td class="num">3</td><td class="num mono">7,468,152</td><td class="mono"><span class="txid">4ad3ef9af337b1e92d895f9342ad9a9235d601291cb42fb6b726fbda35933fe7</span></td><td class="mono"><span class="addr">dero1qyyawp87a3ckr9f2j5hnqmxevq3czrr83prc58ylc5889qdt0zf6cqgsr9jmq</span></td><td class="mono"><span class="addr">dero1qyt33uul6c4sx5krvszsdq0492lhk70234uuy4tc8s6h48e9sgup6qgmm0jnl</span></td><td class="num">0.17784</td><td></td></tr>
+<tr data-lad="9" data-amt="0.09740"><td class="mono">dust</td><td class="num">4</td><td class="num mono">7,468,303</td><td class="mono"><span class="txid">f389f4b63e9256d052445589ca06eee694bac0eefda658add5d4dbd37b29d60c</span></td><td class="mono"><span class="addr">dero1qyyawp87a3ckr9f2j5hnqmxevq3czrr83prc58ylc5889qdt0zf6cqgsr9jmq</span></td><td class="mono"><span class="addr">dero1qyt33uul6c4sx5krvszsdq0492lhk70234uuy4tc8s6h48e9sgup6qgmm0jnl</span></td><td class="num">0.09740</td><td></td></tr>
+<tr data-lad="9" data-amt="0.27614"><td class="mono">dust</td><td class="num">5</td><td class="num mono">7,471,414</td><td class="mono"><span class="txid">879f99d24bde3eaadd0ee348d3eef5e61b13b11bc9ab7c554ef6fc1a679b7de6</span></td><td class="mono"><span class="addr">dero1qyyawp87a3ckr9f2j5hnqmxevq3czrr83prc58ylc5889qdt0zf6cqgsr9jmq</span></td><td class="mono"><span class="addr">dero1qyt33uul6c4sx5krvszsdq0492lhk70234uuy4tc8s6h48e9sgup6qgmm0jnl</span></td><td class="num">0.27614</td><td></td></tr>
+<tr data-lad="9" data-amt="0.19761"><td class="mono">dust</td><td class="num">6</td><td class="num mono">7,471,779</td><td class="mono"><span class="txid">e0a6f89071b89ee8f479845399e78c17d31f3dbc8e1c4370e22ec5a4fcd214bc</span></td><td class="mono"><span class="addr">dero1qyyawp87a3ckr9f2j5hnqmxevq3czrr83prc58ylc5889qdt0zf6cqgsr9jmq</span></td><td class="mono"><span class="addr">dero1qyt33uul6c4sx5krvszsdq0492lhk70234uuy4tc8s6h48e9sgup6qgmm0jnl</span></td><td class="num">0.19761</td><td></td></tr>
+<tr data-lad="9" data-amt="0.25614"><td class="mono">dust</td><td class="num">7</td><td class="num mono">7,471,832</td><td class="mono"><span class="txid">364538c7073f9c5e3b99eeec33a9bfb830a5d3d0cefb6c44d63b22b90c82a655</span></td><td class="mono"><span class="addr">dero1qyyawp87a3ckr9f2j5hnqmxevq3czrr83prc58ylc5889qdt0zf6cqgsr9jmq</span></td><td class="mono"><span class="addr">dero1qyt33uul6c4sx5krvszsdq0492lhk70234uuy4tc8s6h48e9sgup6qgmm0jnl</span></td><td class="num">0.25614</td><td></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>What we still do not know</h2>
+  <hr class="rule">
+  <table>
+    <caption>
+      The honest edges of this map. None of these are blocked by effort; they are blocked by what a privacy
+      chain will tell you without the sender&rsquo;s cooperation.
+    </caption>
+    <thead><tr><th>Open question</th><th>Why it is open</th></tr></thead>
+    <tbody>
+      <tr><td>What is in the 14 undecoded transactions</td><td>they use a ring of 16 and their amounts have not been recovered; they share one receiving address</td></tr>
+      <tr><td>Whether the burn came from these wallets</td><td>the burn transaction hides its sender behind a ring of 16</td></tr>
+      <tr><td>The 36 bridge transfers, individually</td><td>they were never double-applied, so they are absent from the remediation list the transaction table above is built from; they were located by block walk and are not listed here one by one</td></tr>
+      <tr><td>How much in total reached that service</td><td>one deposit is measured at 408,774.564; four others between the same pair of wallets return no amount under either predicate across the range searched, and whether that is because their amounts fall off the search lattice or for some other reason is not established, so the total is a floor rather than a number, and none of it is folded into the figures above</td></tr>
+      <tr><td>What the outstanding coins do next</td><td>a policy question for DERO to answer; the chain cannot settle it</td></tr>
+    </tbody>
+  </table>
+
+  <footer class="foot">
+    Transaction list, senders, receivers and amounts as published by a DERO maintainer on 2026-08-29 and
+    recomputed here independently; ladder sums, gap counts, leak points and the accounting residual are
+    ours. Every amount was re-derived from the transaction&rsquo;s own encrypted payload, which resolves to
+    a clean canonical message at the true figure and to noise at any other; none of these numbers rests on
+    the accompanying proof strings, which declare their own amount and can be constructed to show any
+    value. The five million burn is different: the chain binds its amount to coins that actually left a
+    funded account, so it cannot be inflated the way a proof string can. Transaction
+    <span class="mono">808342e3079f16db550a232b181d5aa23ad99a13559ee8f7c6ee89d6bd3e7898</span> at block 7,539,913. 53 transactions are published and readable; 14 further
+    affected transactions could not be decoded, so every total here is a floor. Exploit
+    fixed by HF3, live 2026-08-21.
+  </footer>
+
+</div>
+<script>
+(function(){
+  var tb=document.getElementById('tb'), q=document.getElementById('q'),
+      f=document.getElementById('f'), n=document.getElementById('n'),
+      rows=Array.prototype.slice.call(tb.rows), dir={};
+  function upd(){
+    var s=q.value.toLowerCase(), l=f.value, c=0;
+    rows.forEach(function(r){
+      var txt=r.textContent.toLowerCase();
+      var titles=Array.prototype.map.call(r.querySelectorAll('[title]'),function(e){return e.title.toLowerCase();}).join(' ');
+      var amt=(r.getAttribute('data-amt')||'');
+      var okQ=!s||txt.indexOf(s)>-1||titles.indexOf(s)>-1||amt.indexOf(s)>-1;
+      var okL=!l||r.cells[0].textContent.trim()===l;
+      r.style.display=(okQ&&okL)?'':'none'; if(okQ&&okL)c++;
+    });
+    n.textContent=c+' of '+rows.length+' shown';
+  }
+  q.addEventListener('input',upd); f.addEventListener('change',upd);
+  Array.prototype.forEach.call(document.querySelectorAll('#t th[data-k]'),function(th,i){
+    th.tabIndex=0; th.setAttribute('role','button');
+    th.addEventListener('keydown',function(e){
+      if(e.key==='Enter'||e.key===' '){ e.preventDefault(); th.click(); }
+    });
+    th.addEventListener('click',function(){
+      var k=th.dataset.k, asc=!(dir[k]===true); dir={}; dir[k]=asc;
+      Array.prototype.forEach.call(document.querySelectorAll('#t th'),function(o){o.removeAttribute('aria-sort');});
+      th.setAttribute('aria-sort',asc?'ascending':'descending');
+      var num=(k==='amt'||k==='rung'||k==='h');
+      rows.sort(function(a,b){
+        var x,y;
+        if(k==='amt'){x=parseFloat(a.dataset.amt);y=parseFloat(b.dataset.amt);}
+        else if(k==='lad'){x=a.dataset.lad;y=b.dataset.lad;}
+        else if(num){x=parseFloat(a.cells[i].textContent.replace(/,/g,''));y=parseFloat(b.cells[i].textContent.replace(/,/g,''));}
+        else{x=(a.cells[i].querySelector('[title]')||a.cells[i]).getAttribute?
+              ((a.cells[i].querySelector('[title]')||{}).title||a.cells[i].textContent):a.cells[i].textContent;
+             y=(b.cells[i].querySelector('[title]')||{}).title||b.cells[i].textContent;}
+        if(x<y)return asc?-1:1; if(x>y)return asc?1:-1; return 0;
+      });
+      rows.forEach(function(r){tb.appendChild(r);});
+    });
+  });
+  upd();
+})();
+</script>
+</body>
+</html>
