@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/creachadair/jrpc2"
@@ -408,15 +409,20 @@ func (x *XSWD) RemoveApplication(app *ApplicationData) {
 
 // Check if a application exist by its id
 func (x *XSWD) HasApplicationId(app_id string) bool {
+	return x.applicationByID(app_id) != nil
+}
+
+func (x *XSWD) applicationByID(app_id string) *ApplicationData {
 	x.Lock()
 	defer x.Unlock()
 
 	for _, a := range x.applications {
 		if strings.EqualFold(a.Id, app_id) {
-			return true
+			copyA := a
+			return &copyA
 		}
 	}
-	return false
+	return nil
 }
 
 // Add an application from a websocket connection,
@@ -515,10 +521,23 @@ func (x *XSWD) addApplication(r *http.Request, conn *Connection, app *Applicatio
 			return
 		}
 
-		// Check that we don't already have this application
+		// Same-origin reconnect: TELA retry/refresh keeps the same App ID
+		// while the old WebSocket is still registered. Kick the stale
+		// session. Cross-origin ID reuse is still rejected.
 		if x.HasApplicationId(app.Id) {
-			response = "Application ID already added"
-			return
+			existing := x.applicationByID(app.Id)
+			newOrigin := strings.TrimSpace(app.Url)
+			oldOrigin := ""
+			if existing != nil {
+				oldOrigin = strings.TrimSpace(existing.Url)
+			}
+			if existing != nil && newOrigin != "" && strings.EqualFold(oldOrigin, newOrigin) {
+				x.RemoveApplication(existing)
+				x.logger.Info("Replaced stale connection with same ID+origin", "ID", app.Id, "origin", newOrigin)
+			} else {
+				response = "Application ID already added"
+				return
+			}
 		}
 
 		// Check permission len
@@ -664,7 +683,9 @@ func (x *XSWD) handleMessage(app *ApplicationData, request *jrpc2.Request) inter
 				}
 
 				x.logger.V(2).Info("requesting daemon with", "method", request.Method(), "param", request.ParamString())
-				result, err := walletapi.GetRPCClient().RPC.Call(context.Background(), request.Method(), params)
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				result, err := walletapi.GetRPCClient().RPC.Call(ctx, request.Method(), params)
+				cancel()
 				if err != nil {
 					x.logger.V(1).Error(err, "Error on daemon call")
 					return ResponseWithError(request, jrpc2.Errorf(code.InvalidRequest, "Error on daemon call: %q", err.Error()))
