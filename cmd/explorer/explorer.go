@@ -24,16 +24,17 @@ package main
 // TODO: error handling is non-existant ( as this was built up in hrs ). Add proper error handling
 //
 
-import "time"
-import "fmt"
-import "os"
-import "runtime"
+import (
+	"fmt"
+	"os"
+	"runtime"
+	"time"
 
-import "github.com/docopt/docopt-go"
-import "github.com/go-logr/logr"
-
-import "github.com/deroproject/derohe/cmd/explorer/explorerlib"
-import "github.com/deroproject/derohe/globals"
+	"github.com/deroproject/derohe/cmd/explorer/explorerlib"
+	"github.com/deroproject/derohe/globals"
+	"github.com/docopt/docopt-go"
+	"github.com/go-logr/logr"
+)
 
 var command_line string = `dero_explorer
 DERO HE Explorer: A secure, private blockchain with smart-contracts
@@ -72,7 +73,7 @@ func main() {
 	logger = globals.Logger.WithName("explorer")
 
 	logger.Info("DERO HE explorer :  It is an alpha version, use it for testing/evaluations purpose only.")
-	logger.Info("Copyright 2017-2021 DERO Project. All rights reserved.")
+	logger.Info("Copyright 2017-2026 DERO Project. All rights reserved.")
 	logger.Info("", "OS", runtime.GOOS, "ARCH", runtime.GOARCH, "GOMAXPROCS", runtime.GOMAXPROCS(0))
 	//logger.Info("","Version", config.Version.String())
 

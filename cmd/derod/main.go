@@ -16,44 +16,43 @@
 
 package main
 
-import "io"
-import "os"
-import "time"
-import "fmt"
-import "bytes"
+import (
+	"bufio"
+	"bytes"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math/big"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"runtime/pprof"
+	"strconv"
+	"strings"
+	"time"
 
-import "bufio"
-import "strings"
-import "strconv"
-import "runtime"
-import "runtime/debug"
-import "math/big"
-import "os/signal"
+	"github.com/chzyer/readline"
+	"github.com/deroproject/derohe/block"
+	"github.com/deroproject/derohe/blockchain"
+	"github.com/deroproject/derohe/config"
+	"github.com/deroproject/derohe/globals"
+	"github.com/deroproject/derohe/p2p"
+	"github.com/deroproject/derohe/rpc"
+	"github.com/deroproject/derohe/transaction"
+	"github.com/docopt/docopt-go"
+	"github.com/go-logr/logr"
+	"gopkg.in/natefinch/lumberjack.v2"
 
-//import "crypto/sha1"
-import "encoding/hex"
-import "encoding/json"
-import "path/filepath"
-import "runtime/pprof"
+	//import "crypto/sha1"
 
-import "github.com/go-logr/logr"
+	//import "golang.org/x/crypto/sha3"
 
-//import "golang.org/x/crypto/sha3"
-
-import "github.com/chzyer/readline"
-import "github.com/docopt/docopt-go"
-import "gopkg.in/natefinch/lumberjack.v2"
-
-import "github.com/deroproject/derohe/p2p"
-import "github.com/deroproject/derohe/globals"
-import "github.com/deroproject/derohe/block"
-import "github.com/deroproject/derohe/transaction"
-import "github.com/deroproject/derohe/config"
-import "github.com/deroproject/derohe/rpc"
-import "github.com/deroproject/derohe/blockchain"
-import derodrpc "github.com/deroproject/derohe/cmd/derod/rpc"
-
-import "github.com/deroproject/derohe/cryptography/crypto"
+	derodrpc "github.com/deroproject/derohe/cmd/derod/rpc"
+	"github.com/deroproject/derohe/cryptography/crypto"
+)
 
 var command_line string = `derod 
 DERO : A secure, private blockchain with smart-contracts
@@ -157,7 +156,7 @@ func main() {
 	logger = globals.Logger.WithName("derod")
 
 	logger.Info("DERO HE daemon :  It is an alpha version, use it for testing/evaluations purpose only.")
-	logger.Info("Copyright 2017-2021 DERO Project. All rights reserved.")
+	logger.Info("Copyright 2017-2026 DERO Project. All rights reserved.")
 	logger.Info("", "OS", runtime.GOOS, "ARCH", runtime.GOARCH, "GOMAXPROCS", runtime.GOMAXPROCS(0))
 	logger.Info("", "Version", config.Version.String())
 
@@ -864,13 +863,16 @@ restart_loop:
 			regpool_tx_count := len(chain.Regpool.Regpool_List_TX())
 
 			supply := blockchain.CalcSupply(uint64(chain.Get_Height()))
+			spendable_supply := blockchain.SpendableSupply(uint64(chain.Get_Height()))
 
 			hostname, _ := os.Hostname()
 			fmt.Printf("STATUS MENU for DERO HE Node - Hostname: %s\n\n", hostname)
 			fmt.Printf("Hostname: %s - Uptime: %s\n", hostname, time.Now().Sub(globals.StartTime).Round(time.Second).String())
 			fmt.Printf("Uptime Since: %s\n\n", globals.StartTime.Format(time.RFC1123))
 
-			fmt.Printf("Network %s Height %d  NW Hashrate %0.03f MH/sec  Peers %d inc, %d out  MEMPOOL size %d REGPOOL %d  Total Supply %s DERO \n", globals.Config.Name, chain.Get_Height(), float64(chain.Get_Network_HashRate())/1000000.0, inc, out, mempool_tx_count, regpool_tx_count, globals.FormatMoney(supply))
+			fmt.Printf("Network %s  Height %d  NW Hashrate %0.03f MH/sec  Peers %d inc, %d out  MEMPOOL size %d  REGPOOL %d\n", globals.Config.Name, chain.Get_Height(), float64(chain.Get_Network_HashRate())/1000000.0, inc, out, mempool_tx_count, regpool_tx_count)
+			fmt.Printf("Total Supply %s DERO\n", globals.FormatMoney(supply))
+			fmt.Printf("Spendable Supply %s DERO\n", globals.FormatMoney(spendable_supply))
 
 			tips := chain.Get_TIPS()
 			fmt.Printf("Tips ")

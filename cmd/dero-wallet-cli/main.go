@@ -166,7 +166,7 @@ func main() {
 	logger = globals.Logger.WithName("wallet")
 
 	logger.Info("DERO Wallet  :  It is an alpha version, use it for testing/evaluations purpose only.")
-	logger.Info("Copyright 2017-2021 DERO Project. All rights reserved.")
+	logger.Info("Copyright 2017-2026 DERO Project. All rights reserved.")
 	logger.Info("", "OS", runtime.GOOS, "ARCH", runtime.GOARCH, "GOMAXPROCS", runtime.GOMAXPROCS(0))
 	logger.Info("", "Version", config.Version.String())
 	logger.V(1).Info("", "Arguments", globals.Arguments)

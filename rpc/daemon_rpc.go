@@ -296,6 +296,7 @@ type (
 		Tx_pool_size               uint64  `json:"tx_pool_size"`
 		Dynamic_fee_per_kb         uint64  `json:"dynamic_fee_per_kb"`
 		Total_Supply               uint64  `json:"total_supply"`
+		Spendable_Supply           uint64  `json:"spendable_supply"`
 		Median_Block_Size          uint64  `json:"median_block_size"`
 		White_peerlist_size        uint64  `json:"white_peerlist_size"`
 		Version                    string  `json:"version"`

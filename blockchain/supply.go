@@ -24,3 +24,10 @@ func CalcSupply(height uint64) uint64 {
 
 	return supply
 }
+
+func SpendableSupply(height uint64) uint64 {
+	var supply uint64
+	supply = 2388651730000 // additional spendable supply from exploit in August 2026 (~23.8 million Dero)
+
+	return CalcSupply(height) + supply
+}
