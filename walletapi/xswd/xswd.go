@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -425,6 +426,60 @@ func (x *XSWD) applicationByID(app_id string) *ApplicationData {
 	return nil
 }
 
+// normalizeWebOriginHost lowercases the host and collapses loopback names so
+// TELA pages served on 127.0.0.1 match dApps that declare http://localhost:PORT
+// (and vice versa). Remote hosts are never aliased.
+func normalizeWebOriginHost(host string) string {
+	h := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	switch h {
+	case "localhost", "127.0.0.1", "::1", "[::1]":
+		return "loopback"
+	}
+	return h
+}
+
+// webOriginPort returns the effective port, filling in scheme defaults so
+// "http://host" and "http://host:80" compare equal.
+func webOriginPort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	}
+	return ""
+}
+
+// sameWebOrigin reports whether a and b are the same web origin
+// (scheme + host + port). Path, query and fragment are ignored. Loopback
+// names (localhost, 127.0.0.1, ::1) are treated as the same host so a TELA
+// page opened on either loopback name matches the dApp-declared URL.
+func sameWebOrigin(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if a == "" || b == "" {
+		return false
+	}
+	ua, err := url.Parse(a)
+	if err != nil {
+		return false
+	}
+	ub, err := url.Parse(b)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(ua.Scheme, ub.Scheme) || ua.Scheme == "" {
+		return false
+	}
+	if normalizeWebOriginHost(ua.Hostname()) != normalizeWebOriginHost(ub.Hostname()) {
+		return false
+	}
+	return webOriginPort(ua) == webOriginPort(ub)
+}
+
 // Add an application from a websocket connection,
 // it verifies that application is valid and will add it to the application list if user accepts the request
 func (x *XSWD) addApplication(r *http.Request, conn *Connection, app *ApplicationData) (response string, accepted bool) {
@@ -463,8 +518,11 @@ func (x *XSWD) addApplication(r *http.Request, conn *Connection, app *Applicatio
 			}
 		}
 
-		// Verify that the website url set is the same as origin (security check)
-		if len(origin) > 0 && app.Url != origin {
+		// Verify that the website url set is the same origin as the browser
+		// Origin header (security check). Loopback names are equivalent and
+		// path/query are ignored: TELA serves 127.0.0.1 while dApps declare
+		// http://localhost:PORT, and the handshake url may carry a path.
+		if len(origin) > 0 && !sameWebOrigin(app.Url, origin) {
 			response = "Invalid URL compared to origin"
 			x.logger.V(1).Info(response, "origin", origin, "url", app.Url)
 			return
@@ -531,7 +589,7 @@ func (x *XSWD) addApplication(r *http.Request, conn *Connection, app *Applicatio
 			if existing != nil {
 				oldOrigin = strings.TrimSpace(existing.Url)
 			}
-			if existing != nil && newOrigin != "" && strings.EqualFold(oldOrigin, newOrigin) {
+			if existing != nil && sameWebOrigin(oldOrigin, newOrigin) {
 				x.RemoveApplication(existing)
 				x.logger.Info("Replaced stale connection with same ID+origin", "ID", app.Id, "origin", newOrigin)
 			} else {
@@ -884,7 +942,7 @@ func (x *XSWD) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				if oldOrigin == "" {
 					oldOrigin = strings.TrimSpace(a.Name)
 				}
-				if newOrigin != "" && strings.EqualFold(oldOrigin, newOrigin) {
+				if sameWebOrigin(oldOrigin, newOrigin) {
 					sameOrigin = true
 					copyA := a
 					existingApp = &copyA

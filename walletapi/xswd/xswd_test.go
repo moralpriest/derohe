@@ -2165,6 +2165,39 @@ func testXSWDCall(t *testing.T, conn *websocket.Conn, request interface{}) (resp
 	return
 }
 
+func TestSameWebOrigin(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		// Villager: TELA serves 127.0.0.1, dApp declares localhost
+		{"http://localhost:8082", "http://127.0.0.1:8082", true},
+		{"http://127.0.0.1:8082", "http://localhost:8082", true},
+		{"http://localhost:8082", "http://[::1]:8082", true},
+		// handshake url may carry a path; Origin never does
+		{"http://127.0.0.1:8082/index.html", "http://127.0.0.1:8082", true},
+		{"http://127.0.0.1:8082/index.html", "http://localhost:8082", true},
+		// identical origins
+		{"http://127.0.0.1:8082", "http://127.0.0.1:8082", true},
+		{"http://testapp0.com", "http://testapp0.com", true},
+		// default ports
+		{"http://testapp0.com", "http://testapp0.com:80", true},
+		// must still deny
+		{"http://localhost:8082", "http://127.0.0.1:8083", false},
+		{"http://localhost:8082", "http://evil.com:8082", false},
+		{"http://invalidtestorigin.com", "http://testapp0.com", false},
+		{"http://localhost:8082", "https://localhost:8082", false},
+		{"http://[::1]:8082", "http://evil.com:8082", false},
+		{"", "http://localhost:8082", false},
+		{"http://localhost:8082", "", false},
+	}
+	for _, tc := range cases {
+		if got := sameWebOrigin(tc.a, tc.b); got != tc.want {
+			t.Fatalf("sameWebOrigin(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
 // Test calling added listeners from account
 func testListener(xswdWallet *walletapi.Wallet_Disk, event rpc.EventType, value interface{}) {
 	if listeners, ok := xswdWallet.GetAccount().EventListeners[event]; ok {
